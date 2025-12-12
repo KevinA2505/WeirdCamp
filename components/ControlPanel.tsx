@@ -52,8 +52,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu
             </div>
             <input
               type="range"
-              min="30"
-              max="250"
+              min="60"
+              max="200"
               step="10"
               value={config.resolution}
               onChange={(e) => updateConfig('resolution', Number(e.target.value))}
