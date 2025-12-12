@@ -1,0 +1,4 @@
+{
+  "name": "Generador de Terreno 3D Low-Poly",
+  "description": "Un modelador de terreno procedural con zonas verdes, ríos y montañas. Incluye visualización de hitboxes, control de cámara y regeneración optimizada."
+}
