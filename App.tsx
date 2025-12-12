@@ -8,20 +8,20 @@ type View = 'MENU' | 'SIMULATION';
 const App = () => {
   const [view, setView] = useState<View>('MENU');
   const [config, setConfig] = useState<WorldConfig>({
-    size: 250,
-    resolution: 120,
+    size: 260,
+    resolution: 140,
     seed: Math.random() * 10000,
     forestDensity: 0.25,
     rockDensity: 0.05,
-    reliefScale: 1.0,
-    riverWidth: 15,
-    lakeThreshold: 0.15,
+    reliefScale: 0.95,
+    riverWidth: 12,
+    lakeThreshold: 0.12,
     showHitboxes: false,
-    dayNightSpeed: 1.0,
+    dayNightSpeed: 0.8,
     flashlightEnabled: false,
     flashlightIntensity: 1500,
     season: 'spring',
-    landBias: 0.35,
+    landBias: 0.2,
   });
 
   const handleRegenerate = () => {

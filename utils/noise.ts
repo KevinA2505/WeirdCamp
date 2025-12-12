@@ -46,7 +46,7 @@ export const generateTerrain = (
   size: number,
   resolution: number,
   seed: number,
-  waterLevel: number = 0, 
+  waterLevel: number = 0,
   forestDensity: number,
   rockDensity: number,
   reliefScale: number = 1.0,
@@ -116,7 +116,15 @@ export const generateTerrain = (
 
   // --- Main Generation Loop ---
 
-  const vertexCount = (resolution + 1) * (resolution + 1);
+  // Clamp inputs to avoid runaway geometries and keep performance predictable
+  const effectiveResolution = THREE.MathUtils.clamp(Math.round(resolution), 30, 220);
+  const effectiveRelief = THREE.MathUtils.clamp(reliefScale, 0.35, 1.25);
+  const effectiveRiverWidth = THREE.MathUtils.clamp(riverWidth, 0, 40);
+  const effectiveLakeThreshold = THREE.MathUtils.clamp(lakeThreshold, 0, 0.4) * 0.8;
+  const effectiveLandBias = THREE.MathUtils.clamp(landBias, -0.5, 1.0);
+
+  const resolutionPlusOne = effectiveResolution + 1;
+  const vertexCount = resolutionPlusOne * resolutionPlusOne;
   const positions = new Float32Array(vertexCount * 3);
   const colors = new Float32Array(vertexCount * 3);
   const indices: number[] = [];
@@ -127,16 +135,14 @@ export const generateTerrain = (
   const waterInstances: ObjectInstance[] = [];
   const peakInstances: ObjectInstance[] = [];
 
-  const segmentSize = size / resolution;
+  const segmentSize = size / effectiveResolution;
   const halfSize = size / 2;
-  const WATER_LEVEL = 0; 
-  
-  const GLOBAL_SCALE = 0.006; 
+  const WATER_LEVEL = 0;
 
-  const effectiveLakeThreshold = lakeThreshold * 0.8;
+  const GLOBAL_SCALE = 0.006;
 
-  for (let i = 0; i <= resolution; i++) {
-    for (let j = 0; j <= resolution; j++) {
+  for (let i = 0; i <= effectiveResolution; i++) {
+    for (let j = 0; j <= effectiveResolution; j++) {
       const realX = i * segmentSize - halfSize;
       const realZ = j * segmentSize - halfSize;
       
@@ -151,27 +157,27 @@ export const generateTerrain = (
       let baseHeight = fbm(nx, nz, 3, 0.5, 2.0); 
       
       // APPLY LAND BIAS
-      baseHeight += landBias;
+      baseHeight += effectiveLandBias;
 
-      baseHeight *= 15 * reliefScale; 
+      baseHeight *= 15 * effectiveRelief;
       
       // --- B. Mountain Ranges ---
       let mountainMask = fbm(nx * 0.5 + 100, nz * 0.5 + 100, 2, 0.5, 2.0);
       mountainMask = THREE.MathUtils.smoothstep(mountainMask, 0.2, 0.8);
 
       const mountainShape = ridgedFbm(nx * 1.5, nz * 1.5, 4, 0.5, 2.2);
-      const mountainHeight = mountainShape * 55 * reliefScale * mountainMask;
+      const mountainHeight = mountainShape * 55 * effectiveRelief * mountainMask;
 
       y = baseHeight + mountainHeight;
 
       // --- C. Rivers ---
-      if (riverWidth > 0) {
+      if (effectiveRiverWidth > 0) {
           const riverPath = Math.sin(wx * 0.008) * 30 + fbm(wx * 0.02, wz * 0.02, 2, 0.5, 2) * 20;
-          const distToRiver = Math.abs(wz - riverPath); 
+          const distToRiver = Math.abs(wz - riverPath);
 
-          if (distToRiver < riverWidth * 2.5) {
-              const bank = THREE.MathUtils.smoothstep(distToRiver, riverWidth * 0.5, riverWidth * 2.5);
-              const digDepth = (1.0 - bank) * 15; 
+          if (distToRiver < effectiveRiverWidth * 2.5) {
+              const bank = THREE.MathUtils.smoothstep(distToRiver, effectiveRiverWidth * 0.5, effectiveRiverWidth * 2.5);
+              const digDepth = (1.0 - bank) * 15;
               y -= digDepth;
               
               if (y < WATER_LEVEL - 2) {
@@ -183,8 +189,8 @@ export const generateTerrain = (
       // --- D. Lakes ---
       const moisture = moistureNoise(nx * 1.5, nz * 1.5); 
       
-      const isLowLand = y > -5 && y < 10 * reliefScale;
-      const isWet = moisture > (1.0 - effectiveLakeThreshold * 1.5); 
+      const isLowLand = y > -5 && y < 10 * effectiveRelief;
+      const isWet = moisture > (1.0 - effectiveLakeThreshold * 1.5);
 
       if (isLowLand && isWet) {
           y = THREE.MathUtils.lerp(y, WATER_LEVEL - 5, 0.8);
@@ -193,7 +199,7 @@ export const generateTerrain = (
       if (y < -20) y = -20;
 
       // --- Assign Positions ---
-      const index = (i * (resolution + 1) + j);
+      const index = i * resolutionPlusOne + j;
       positions[index * 3] = realX;
       positions[index * 3 + 1] = y;
       positions[index * 3 + 2] = realZ;
@@ -213,7 +219,7 @@ export const generateTerrain = (
 
       // Peak Hitbox: Identify very high terrain
       // Threshold depends on relief scale but generally peaks are > 60% max height
-      const peakThreshold = 60 * reliefScale; // Increased to target tips
+      const peakThreshold = 60 * effectiveRelief; // Increased to target tips
       if (y > peakThreshold) {
           peakInstances.push({
               x: realX,
@@ -232,8 +238,8 @@ export const generateTerrain = (
       const slopeNoise = Math.abs(noise2D(nx * 10, nz * 10));
 
       // Adjust color thresholds slightly for Winter to look more covered
-      const snowThreshold = season === 'winter' ? 15 * reliefScale : 65 * reliefScale;
-      const grassThreshold = season === 'winter' ? 5 : 25 * reliefScale;
+      const snowThreshold = season === 'winter' ? 15 * effectiveRelief : 65 * effectiveRelief;
+      const grassThreshold = season === 'winter' ? 5 : 25 * effectiveRelief;
 
       if (height < WATER_LEVEL) {
           if (height < WATER_LEVEL - 8) color = COLORS.DEEP_WATER;
@@ -279,12 +285,12 @@ export const generateTerrain = (
     }
   }
 
-  for (let i = 0; i < resolution; i++) {
-    for (let j = 0; j < resolution; j++) {
-      const a = i * (resolution + 1) + j;
-      const b = i * (resolution + 1) + j + 1;
-      const c = (i + 1) * (resolution + 1) + j + 1;
-      const d = (i + 1) * (resolution + 1) + j;
+  for (let i = 0; i < effectiveResolution; i++) {
+    for (let j = 0; j < effectiveResolution; j++) {
+      const a = i * resolutionPlusOne + j;
+      const b = i * resolutionPlusOne + j + 1;
+      const c = (i + 1) * resolutionPlusOne + j + 1;
+      const d = (i + 1) * resolutionPlusOne + j;
       indices.push(a, b, d);
       indices.push(b, c, d);
     }
