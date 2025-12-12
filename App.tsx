@@ -20,6 +20,9 @@ const App = () => {
     dayNightSpeed: 1.0,
     flashlightEnabled: false,
     flashlightIntensity: 1500,
+    fogColor: '#d9e3ff',
+    fogDensity: 0.003,
+    fogFalloff: 2.0,
     season: 'spring',
     landBias: 0.35,
   });

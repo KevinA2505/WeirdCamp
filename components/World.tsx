@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
+import React, { useMemo, useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { WorldConfig, ObjectInstance } from '../types';
@@ -44,11 +44,11 @@ const HitboxLayer: React.FC<{
 };
 
 export const World: React.FC<WorldProps> = ({ config }) => {
-  const { 
-    size, resolution, seed, waterLevel, forestDensity, 
-    rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes, 
+  const {
+    size, resolution, seed, waterLevel, forestDensity,
+    rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes,
     dayNightSpeed, flashlightEnabled, flashlightIntensity,
-    season, landBias 
+    season, landBias, fogColor: fogColorHex, fogDensity: fogDensityConfig, fogFalloff
   } = config;
 
   // Day/Night State
@@ -60,9 +60,18 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   const [time, setTime] = useState(0);
 
   // Fog State
-  const [fogColor, setFogColor] = useState(new THREE.Color('#ffffff'));
-  const [fogNear, setFogNear] = useState(10);
-  const [fogFar, setFogFar] = useState(200);
+  const fogConfigColor = useRef(new THREE.Color(fogColorHex));
+  const [fogColor, setFogColor] = useState(new THREE.Color(fogColorHex));
+  const [fogDensity, setFogDensity] = useState(fogDensityConfig);
+
+  useEffect(() => {
+    fogConfigColor.current.set(fogColorHex);
+    setFogColor((current) => current.clone().lerp(fogConfigColor.current, 1));
+  }, [fogColorHex]);
+
+  useEffect(() => {
+    setFogDensity(fogDensityConfig);
+  }, [fogDensityConfig]);
 
   // References
   const lightRef = useRef<THREE.PointLight>(null);
@@ -175,17 +184,28 @@ export const World: React.FC<WorldProps> = ({ config }) => {
           targetRayleigh = 0.1;
       }
 
+      const blendedFogTarget = targetFogColor.clone().lerp(fogConfigColor.current, 0.35);
+
       setSunColor(prev => prev.lerp(targetSunColor, 0.05));
       setAmbientColor(prev => prev.lerp(targetAmbientColor, 0.05));
       setAmbientIntensity(prev => THREE.MathUtils.lerp(prev, targetIntensity, 0.05));
       setSkyRayleigh(prev => THREE.MathUtils.lerp(prev, targetRayleigh, 0.02));
-      setFogColor(prev => prev.lerp(targetFogColor, 0.02));
+      setFogColor(prev => prev.lerp(blendedFogTarget, 0.02));
     }
 
-    // Update Fog Settings based on config
-    const fogDensityMultiplier = season === 'winter' ? 0.6 : (season === 'autumn' ? 0.8 : 1.0);
-    setFogNear(10);
-    setFogFar(size * fogDensityMultiplier); 
+    // Fog density tied to season and proximity to map bounds
+    const fogDensityMultiplier = season === 'winter' ? 1.2 : (season === 'autumn' ? 1.05 : 1.0);
+    const camera = state.camera.position;
+    const halfSize = size / 2;
+    const distToX = halfSize - Math.abs(camera.x);
+    const distToZ = halfSize - Math.abs(camera.z);
+    const minEdgeDistance = Math.max(0, Math.min(distToX, distToZ));
+    const edgeRange = Math.max(30, size * 0.15);
+    const edgeProximity = 1 - THREE.MathUtils.clamp(minEdgeDistance / edgeRange, 0, 1);
+    const edgeDensityBoost = Math.pow(edgeProximity, fogFalloff);
+
+    const dayNightDensity = dayNightSpeed > 0 ? THREE.MathUtils.mapLinear(Math.max(-0.2, Math.min(elevation, 0.8)), -0.2, 0.8, 0.9, 1.2) : 1;
+    setFogDensity(fogDensityConfig * fogDensityMultiplier * dayNightDensity * (1 + edgeDensityBoost));
 
     // 2. Flashlight
     if (flashlightEnabled && lightRef.current && terrainRef.current) {
@@ -205,7 +225,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   return (
     <group>
       {/* Dynamic Fog */}
-      <fog attach="fog" args={[fogColor, fogNear, fogFar]} />
+      <fogExp2 attach="fog" args={[fogColor, fogDensity]} />
       {/* Set background to fog color to blend horizon */}
       <color attach="background" args={[fogColor.r, fogColor.g, fogColor.b]} />
 

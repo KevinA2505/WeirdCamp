@@ -7,13 +7,18 @@ export interface WorldConfig {
   forestDensity: number;
   rockDensity: number;
   reliefScale: number;
-  riverWidth: number; 
-  lakeThreshold: number; 
+  riverWidth: number;
+  lakeThreshold: number;
   showHitboxes: boolean;
   dayNightSpeed: number;
   flashlightEnabled: boolean;
   flashlightIntensity: number;
-  
+
+  // Fog parameters
+  fogColor: string;
+  fogDensity: number;
+  fogFalloff: number;
+
   // New parameters
   season: Season;
   landBias: number; // -1.0 to 1.0 (Higher = more land)

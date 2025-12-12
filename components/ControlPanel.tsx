@@ -108,6 +108,51 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu
             />
           </div>
         </div>
+
+        <div className="space-y-4 pt-4 border-t border-gray-700">
+          <div className="grid grid-cols-2 gap-3 text-xs text-gray-400 pt-2">
+            <label className="flex flex-col gap-1">
+              Color Niebla
+              <input
+                type="color"
+                value={config.fogColor}
+                onChange={(e) => updateConfig('fogColor', e.target.value)}
+                className="w-full h-10 bg-gray-700 border border-gray-600 rounded"
+              />
+            </label>
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between">
+                <span>Densidad</span>
+                <span>{config.fogDensity.toFixed(4)}</span>
+              </div>
+              <input
+                type="range"
+                min="0.0005"
+                max="0.01"
+                step="0.0005"
+                value={config.fogDensity}
+                onChange={(e) => updateConfig('fogDensity', Number(e.target.value))}
+                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-300"
+              />
+            </div>
+            <div className="flex flex-col gap-1 col-span-2">
+              <div className="flex justify-between">
+                <span>Curva Atenuación</span>
+                <span>{config.fogFalloff.toFixed(1)}x</span>
+              </div>
+              <input
+                type="range"
+                min="0.5"
+                max="5"
+                step="0.1"
+                value={config.fogFalloff}
+                onChange={(e) => updateConfig('fogFalloff', Number(e.target.value))}
+                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+              />
+              <p className="text-[10px] text-gray-500">Controla la rapidez con la que aumenta la niebla al acercarte a los bordes.</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="mt-auto pt-4 border-t border-gray-700 text-xs text-gray-500">
