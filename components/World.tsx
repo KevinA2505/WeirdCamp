@@ -85,6 +85,15 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     rollWeather();
   }, []);
 
+  const starsRef = useRef<THREE.Points>(null);
+  useLayoutEffect(() => {
+    if (!starsRef.current) return;
+    const material = starsRef.current.material as THREE.ShaderMaterial;
+    material.transparent = true;
+    material.opacity = THREE.MathUtils.clamp(starVisibility, 0, 1);
+    material.needsUpdate = true;
+  }, [starVisibility]);
+
   // Fog State
   const [fogColor, setFogColor] = useState(new THREE.Color('#ffffff'));
   const [fogNear, setFogNear] = useState(10);
@@ -408,6 +417,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       )}
 
       <Stars
+        ref={starsRef}
         radius={300}
         depth={50}
         count={5000}
@@ -415,7 +425,6 @@ export const World: React.FC<WorldProps> = ({ config }) => {
         saturation={0}
         fade
         speed={0.5}
-        opacity={starVisibility}
       />
 
       {flashlightEnabled && (
