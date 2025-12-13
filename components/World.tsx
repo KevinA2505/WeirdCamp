@@ -7,6 +7,7 @@ import { TerrainObjects } from './TerrainObjects';
 import { Billboard, Sky, Stars } from '@react-three/drei';
 import { HumanAgent, HumanRuntime } from './HumanAgent';
 import { buildLandPath, createNavContext, findNearestWalkable, findRandomWalkable, worldToCellIndex } from '../utils/navigation';
+import { Boat, BoatMesh } from './Boat';
 
 type DayPhase = 'dawn' | 'noon' | 'dusk' | 'midnight';
 type WeatherType = 'clear' | 'rain' | 'snow';
@@ -36,6 +37,34 @@ interface CloudInstance {
   position: [number, number, number];
   scale: number;
 }
+
+interface BoatSpawnCandidate {
+  position: THREE.Vector3;
+  rotation: number;
+  key: string;
+}
+
+const clampCount = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const selectSpawnPoints = (
+  candidates: BoatSpawnCandidate[],
+  desiredCount: number,
+  minDistance: number
+): BoatSpawnCandidate[] => {
+  if (!candidates.length) return [];
+
+  const shuffled = [...candidates].sort(() => Math.random() - 0.5);
+  const chosen: BoatSpawnCandidate[] = [];
+
+  for (const candidate of shuffled) {
+    if (chosen.length >= desiredCount) break;
+
+    const farEnough = chosen.every((other) => candidate.position.distanceTo(other.position) >= minDistance);
+    if (farEnough) chosen.push(candidate);
+  }
+
+  return chosen;
+};
 
 interface WorldProps {
   config: WorldConfig;
@@ -190,6 +219,8 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
     [navGrid, navResolution, segmentSize, size]
   );
 
+  const [boats, setBoats] = useState<Boat[]>([]);
+
   const getGroundedHeight = useCallback(
     (cellHeight: number) => cellHeight + HUMAN_GROUND_OFFSET,
     [HUMAN_GROUND_OFFSET]
@@ -288,6 +319,99 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
   useImperativeHandle(ref, () => ({ spawnHuman }), [spawnHuman]);
 
   const seaLevel = waterLevel;
+
+  const shorelineCandidates = useMemo<BoatSpawnCandidate[]>(() => {
+    if (!navGrid.length) return [];
+
+    const candidates = new Map<string, BoatSpawnCandidate>();
+    const neighborOffsets: [number, number][] = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ];
+
+    for (let index = 0; index < navGrid.length; index++) {
+      const cell = navGrid[index];
+      if (!cell || !cell.walkable || cell.type !== 'water') continue;
+
+      const ci = Math.floor(index / navResolution);
+      const cj = index % navResolution;
+      const baseHeight = Math.max(cell.height, seaLevel);
+
+      for (const [di, dj] of neighborOffsets) {
+        const ni = ci + di;
+        const nj = cj + dj;
+        if (ni < 0 || nj < 0 || ni >= navResolution || nj >= navResolution) continue;
+
+        const neighborIndex = ni * navResolution + nj;
+        const neighbor = navGrid[neighborIndex];
+        if (!neighbor || !neighbor.walkable || neighbor.type !== 'land') continue;
+
+        const key = `${Math.min(index, neighborIndex)}-${Math.max(index, neighborIndex)}`;
+        if (candidates.has(key)) continue;
+
+        const midpoint = new THREE.Vector3(
+          (cell.x + neighbor.x) / 2,
+          baseHeight + 0.12,
+          (cell.z + neighbor.z) / 2,
+        );
+
+        const rotation = Math.atan2(neighbor.x - cell.x, neighbor.z - cell.z);
+        candidates.set(key, { position: midpoint, rotation, key });
+      }
+    }
+
+    return Array.from(candidates.values());
+  }, [navGrid, navResolution, seaLevel]);
+
+  const desiredBoatCount = useMemo(() => {
+    const areaFactor = (size * size) / 12000;
+    const intersectionFactor = shorelineCandidates.length * 0.2;
+    const estimated = Math.round(areaFactor + intersectionFactor);
+    return clampCount(estimated, 10, 50);
+  }, [shorelineCandidates.length, size]);
+
+  const boatSamplingOffsets = useMemo(() => {
+    const radius = Math.max(segmentSize * 0.45, 0.75);
+    return [
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(radius, 0, 0),
+      new THREE.Vector3(-radius, 0, 0),
+      new THREE.Vector3(0, 0, radius),
+      new THREE.Vector3(0, 0, -radius),
+    ];
+  }, [segmentSize]);
+
+  useEffect(() => {
+    if (!shorelineCandidates.length) {
+      setBoats([]);
+      return;
+    }
+
+    const minSpacing = Math.max(segmentSize * 6, 10);
+    const spawnPoints = selectSpawnPoints(shorelineCandidates, desiredBoatCount, minSpacing);
+    const boatInstances = spawnPoints.map(
+      (candidate, index) => new Boat(`boat-${index.toString(16).padStart(4, '0')}`, candidate.position.clone(), candidate.rotation)
+    );
+
+    setBoats(boatInstances);
+  }, [desiredBoatCount, segmentSize, shorelineCandidates]);
+
+  const isBoatOnWater = useCallback(
+    (position: THREE.Vector3) => {
+      if (!navContext.grid.length) return false;
+      const sample = new THREE.Vector3();
+
+      return boatSamplingOffsets.every((offset) => {
+        sample.copy(position).add(offset);
+        const index = worldToCellIndex(sample, navContext);
+        const cell = navContext.grid[index];
+        return cell?.type === 'water';
+      });
+    },
+    [boatSamplingOffsets, navContext]
+  );
 
   const fireflies = useMemo(() => {
     const treeInstances = [...pines, ...broadleafs];
@@ -709,6 +833,17 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
         }
       });
     }
+
+    if (boats.length && navContext.grid.length) {
+      boats.forEach((boat) => {
+        if (isBoatOnWater(boat.position)) {
+          boat.lastWaterPosition.copy(boat.position);
+        } else {
+          boat.position.copy(boat.lastWaterPosition);
+          boat.velocity.set(0, 0, 0);
+        }
+      });
+    }
   });
 
   const Precipitation: React.FC<{ type: WeatherType; intensity: number; area: number }> = ({ type, intensity, area }) => {
@@ -913,6 +1048,13 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
           />
         </mesh>
       )}
+
+      {/* Boats anchored to water intersections */}
+      <group>
+        {boats.map((boat) => (
+          <BoatMesh key={boat.id} boat={boat} />
+        ))}
+      </group>
 
       {/* Autonomous humans walking the red navmesh */}
       <group>
