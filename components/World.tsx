@@ -403,13 +403,13 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     const particleOpacity = isSnow ? 0.6 : 0.85;
     const particleColor = isSnow ? '#e2e8f0' : '#93c5fd';
 
-    return (
-      <points ref={precipitationRef} frustumCulled={false}>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} />
-        </bufferGeometry>
-        <pointsMaterial
-          color={particleColor}
+      return (
+        <points ref={precipitationRef} frustumCulled={false}>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+          </bufferGeometry>
+          <pointsMaterial
+            color={particleColor}
           size={particleSize}
           transparent
           opacity={particleOpacity}
