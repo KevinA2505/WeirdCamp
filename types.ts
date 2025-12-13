@@ -9,8 +9,9 @@ export interface WorldConfig {
   rockDensity: number;
   reliefScale: number;
   riverWidth: number; 
-  lakeThreshold: number; 
+  lakeThreshold: number;
   showHitboxes: boolean;
+  showNavMesh: boolean;
   dayNightSpeed: number;
   flashlightEnabled: boolean;
   flashlightIntensity: number;

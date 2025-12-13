@@ -91,11 +91,9 @@ const NavigationOverlay: React.FC<{
       mesh.setMatrixAt(i, dummy.matrix);
 
       if (cell.type === 'water') {
-        mesh.setColorAt(i, reusableColor.set('#22d3ee'));
-      } else if (cell.walkable) {
-        mesh.setColorAt(i, reusableColor.set('#22c55e'));
+        mesh.setColorAt(i, reusableColor.set('#9ca3af'));
       } else {
-        mesh.setColorAt(i, reusableColor.set('#f97316'));
+        mesh.setColorAt(i, reusableColor.set('#ef4444'));
       }
     });
 
@@ -122,7 +120,7 @@ const NavigationOverlay: React.FC<{
 export const World: React.FC<WorldProps> = ({ config }) => {
   const {
     size, resolution, seed, waterLevel, forestDensity,
-    rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes,
+    rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes, showNavMesh,
     dayNightSpeed, flashlightEnabled, flashlightIntensity,
     season, landBias
   } = config;
@@ -577,7 +575,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
         />
       </mesh>
 
-      <NavigationOverlay grid={navGrid} segmentSize={segmentSize} visible={showHitboxes} />
+      <NavigationOverlay grid={navGrid} segmentSize={segmentSize} visible={showHitboxes || showNavMesh} />
 
 
       {/* Instanced Objects (Trees, Rocks) */}
