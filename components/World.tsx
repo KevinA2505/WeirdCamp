@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState, useLayoutEffect, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { WorldConfig, ObjectInstance, NavigationCell } from '../types';
+import { WorldConfig, ObjectInstance, NavigationCell, BoatInstance } from '../types';
 import { generateTerrain } from '../utils/noise';
 import { TerrainObjects } from './TerrainObjects';
 import { Billboard, Sky, Stars } from '@react-three/drei';
@@ -79,6 +79,59 @@ const HitboxLayer: React.FC<{
         depthWrite={visible}
       />
     </instancedMesh>
+  );
+};
+
+const BoatFleet: React.FC<{ boats: BoatInstance[]; showHitboxes: boolean }> = ({ boats, showHitboxes }) => {
+  const hullRef = useRef<THREE.InstancedMesh>(null);
+  const deckRef = useRef<THREE.InstancedMesh>(null);
+  const hitboxRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+
+  useLayoutEffect(() => {
+    if (!hullRef.current || !deckRef.current) return;
+
+    boats.forEach((boat, index) => {
+      dummy.position.set(boat.x, boat.y, boat.z);
+      dummy.rotation.set(0, boat.rotation, 0);
+      dummy.scale.set(boat.scale, boat.scale, boat.scale);
+      dummy.updateMatrix();
+      hullRef.current!.setMatrixAt(index, dummy.matrix);
+      deckRef.current!.setMatrixAt(index, dummy.matrix);
+      if (hitboxRef.current) {
+        hitboxRef.current.setMatrixAt(index, dummy.matrix);
+      }
+    });
+
+    hullRef.current.instanceMatrix.needsUpdate = true;
+    deckRef.current.instanceMatrix.needsUpdate = true;
+    if (hitboxRef.current) hitboxRef.current.instanceMatrix.needsUpdate = true;
+  }, [boats, showHitboxes]);
+
+  if (boats.length === 0) return null;
+
+  return (
+    <group>
+      <instancedMesh ref={hullRef} args={[undefined, undefined, boats.length]} castShadow receiveShadow>
+        <boxGeometry args={[3.2, 0.7, 1.4]} />
+        <meshStandardMaterial color="#8b5a2b" roughness={0.7} metalness={0.1} />
+      </instancedMesh>
+      <instancedMesh ref={deckRef} args={[undefined, undefined, boats.length]} castShadow receiveShadow>
+        <boxGeometry args={[2.6, 0.4, 1]} />
+        <meshStandardMaterial color="#d6d3d1" roughness={0.4} metalness={0.05} />
+      </instancedMesh>
+      {showHitboxes && (
+        <instancedMesh
+          ref={hitboxRef}
+          args={[undefined, undefined, boats.length]}
+          frustumCulled={false}
+          renderOrder={1}
+        >
+          <boxGeometry args={[3.4, 0.9, 1.6]} />
+          <meshBasicMaterial color="#22d3ee" wireframe transparent opacity={0.6} />
+        </instancedMesh>
+      )}
+    </group>
   );
 };
 
@@ -165,7 +218,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
   const precipitationRef = useRef<THREE.Points>(null);
 
   // Memoize terrain generation
-  const { positions, colors, normals, indices, pines, broadleafs, rocks, waterInstances, peakInstances, segmentSize, navGrid, navResolution } = useMemo(() => {
+  const { positions, colors, normals, indices, pines, broadleafs, rocks, waterInstances, peakInstances, boats, segmentSize, navGrid, navResolution } = useMemo(() => {
     return generateTerrain(
       size,
       resolution,
@@ -922,6 +975,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       <TerrainObjects data={pines} type="pine" showHitboxes={showHitboxes} season={season} />
       <TerrainObjects data={broadleafs} type="broadleaf" showHitboxes={showHitboxes} season={season} />
       <TerrainObjects data={rocks} type="rock" showHitboxes={showHitboxes} season={season} />
+      <BoatFleet boats={boats} showHitboxes={showHitboxes} />
 
       {/* Special Hitbox Layers (Water & Peaks) */}
       <HitboxLayer
