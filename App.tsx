@@ -18,6 +18,7 @@ const App = () => {
     riverWidth: 12,
     lakeThreshold: 0.12,
     showHitboxes: false,
+    showNavMesh: false,
     dayNightSpeed: 0.8,
     flashlightEnabled: false,
     flashlightIntensity: 1500,

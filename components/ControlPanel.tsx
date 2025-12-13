@@ -119,6 +119,15 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu
               <span>{config.rainEnabled ? 'Detener lluvia' : 'Activar lluvia'}</span>
             </button>
 
+            <button
+              onClick={() => updateConfig('showNavMesh', !config.showNavMesh)}
+              className={`w-full py-2.5 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all shadow ${
+                config.showNavMesh ? 'bg-red-600 text-white hover:bg-red-500' : 'bg-gray-700 text-white hover:bg-gray-600'
+              }`}
+            >
+              <span>{config.showNavMesh ? 'Ocultar malla de navegación' : 'Mostrar malla de navegación'}</span>
+            </button>
+
             <div className="space-y-1">
               <div className="flex justify-between text-xs text-gray-400">
                 <label>Intensidad</label>
