@@ -66,57 +66,6 @@ const HitboxLayer: React.FC<{
   );
 };
 
-const NavigationOverlay: React.FC<{
-  grid: NavigationCell[];
-  segmentSize: number;
-  visible: boolean;
-}> = ({ grid, segmentSize, visible }) => {
-  const meshRef = useRef<THREE.InstancedMesh>(null);
-  const dummy = useMemo(() => new THREE.Object3D(), []);
-
-  const overlayHeight = 0.15;
-  const overlayScale = segmentSize * 0.92;
-
-  useLayoutEffect(() => {
-    if (!meshRef.current || !visible) return;
-
-    const mesh = meshRef.current;
-    const reusableColor = new THREE.Color();
-
-    grid.forEach((cell, i) => {
-      dummy.position.set(cell.x, cell.height + overlayHeight, cell.z);
-      dummy.rotation.set(-Math.PI / 2, 0, 0);
-      dummy.scale.set(overlayScale, overlayScale, 1);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-
-      if (cell.type === 'water') {
-        mesh.setColorAt(i, reusableColor.set('#9ca3af'));
-      } else {
-        mesh.setColorAt(i, reusableColor.set('#ef4444'));
-      }
-    });
-
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  }, [grid, dummy, overlayHeight, overlayScale, visible]);
-
-  if (!visible || grid.length === 0) return null;
-
-  return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, grid.length]} frustumCulled={false}>
-      <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial
-        transparent
-        opacity={0.32}
-        depthWrite={false}
-        side={THREE.DoubleSide}
-        vertexColors
-      />
-    </instancedMesh>
-  );
-};
-
 export const World: React.FC<WorldProps> = ({ config }) => {
   const {
     size, resolution, seed, waterLevel, forestDensity,
@@ -183,7 +132,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   const precipitationRef = useRef<THREE.Points>(null);
 
   // Memoize terrain generation
-  const { positions, colors, normals, indices, pines, broadleafs, rocks, waterInstances, peakInstances, segmentSize, navGrid } = useMemo(() => {
+  const { positions, colors, normals, indices, pines, broadleafs, rocks, waterInstances, peakInstances, segmentSize, navGrid, navResolution } = useMemo(() => {
     return generateTerrain(
       size,
       resolution,
@@ -198,6 +147,53 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       landBias
     );
   }, [size, resolution, seed, waterLevel, forestDensity, rockDensity, reliefScale, riverWidth, lakeThreshold, season, landBias]);
+
+  const navigationGeometry = useMemo(() => {
+    if (!navGrid.length) return null;
+
+    const vertexCount = navGrid.length;
+    const positions = new Float32Array(vertexCount * 3);
+    const vertexColors = new Float32Array(vertexCount * 3);
+    const overlayHeight = 0.12;
+
+    const walkableColor = new THREE.Color('#22c55e');
+    const blockedColor = new THREE.Color('#ef4444');
+    const waterColor = new THREE.Color('#38bdf8');
+
+    navGrid.forEach((cell, i) => {
+      const baseY = cell.flags.isWater ? Math.max(cell.height, waterLevel) : cell.height;
+
+      positions[i * 3] = cell.x;
+      positions[i * 3 + 1] = baseY + overlayHeight;
+      positions[i * 3 + 2] = cell.z;
+
+      const targetColor = cell.flags.isWater ? waterColor : (cell.walkable ? walkableColor : blockedColor);
+      vertexColors[i * 3] = targetColor.r;
+      vertexColors[i * 3 + 1] = targetColor.g;
+      vertexColors[i * 3 + 2] = targetColor.b;
+    });
+
+    const indices: number[] = [];
+    for (let i = 0; i < navResolution - 1; i++) {
+      for (let j = 0; j < navResolution - 1; j++) {
+        const a = i * navResolution + j;
+        const b = i * navResolution + j + 1;
+        const c = (i + 1) * navResolution + j + 1;
+        const d = (i + 1) * navResolution + j;
+        indices.push(a, b, d);
+        indices.push(b, c, d);
+      }
+    }
+
+    const IndexArray = navGrid.length > 65535 ? Uint32Array : Uint16Array;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(vertexColors, 3));
+    geometry.setIndex(new THREE.BufferAttribute(new IndexArray(indices), 1));
+    geometry.computeVertexNormals();
+
+    return geometry;
+  }, [navGrid, navResolution, waterLevel]);
 
   // Geometry
   const geometry = useMemo(() => {
@@ -575,7 +571,18 @@ export const World: React.FC<WorldProps> = ({ config }) => {
         />
       </mesh>
 
-      <NavigationOverlay grid={navGrid} segmentSize={segmentSize} visible={showHitboxes || showNavMesh} />
+      {showNavMesh && navigationGeometry && (
+        <mesh geometry={navigationGeometry} frustumCulled={false}>
+          <meshBasicMaterial
+            vertexColors
+            wireframe
+            transparent
+            opacity={0.55}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
 
 
       {/* Instanced Objects (Trees, Rocks) */}
