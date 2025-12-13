@@ -236,10 +236,12 @@ export const generateTerrain = (
           });
       }
 
+      const navHeight = Math.max(y, WATER_LEVEL);
+
       navGrid[index] = {
           x: realX,
           z: realZ,
-          height: y,
+          height: navHeight,
           slope: 0,
           type: isWater ? 'water' : 'land',
           walkable: false,
