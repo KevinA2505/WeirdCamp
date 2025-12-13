@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Lightbulb } from 'lucide-react';
+import { Box, Lightbulb, CloudRain } from 'lucide-react';
 import { WorldConfig } from '../types';
 
 interface ControlPanelProps {
@@ -93,6 +93,15 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu
 
         <div className="space-y-4 pt-4 border-t border-gray-700">
           <h3 className="font-semibold text-gray-300 text-sm">Ajustes Rápidos</h3>
+          <button
+            onClick={() => updateConfig('rainEnabled', !config.rainEnabled)}
+            className={`w-full py-2.5 font-semibold rounded-lg shadow transition-all flex items-center justify-center gap-2 ${
+              config.rainEnabled ? 'bg-sky-500 text-black hover:bg-sky-400' : 'bg-gray-700 text-white hover:bg-gray-600'
+            }`}
+          >
+            <CloudRain size={16} />
+            <span>{config.rainEnabled ? 'Apagar Lluvia' : 'Encender Lluvia'}</span>
+          </button>
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-gray-400">
               <label>Tierra/Agua</label>

@@ -23,6 +23,7 @@ const App = () => {
     flashlightIntensity: 1500,
     season: 'spring',
     landBias: 0.2,
+    rainEnabled: false,
   });
 
   const handleRegenerate = () => {
