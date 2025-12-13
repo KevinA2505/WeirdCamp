@@ -6,7 +6,14 @@ import { generateTerrain } from '../utils/noise';
 import { TerrainObjects } from './TerrainObjects';
 import { Billboard, Sky, Stars } from '@react-three/drei';
 import { HumanAgent, HumanRuntime } from './HumanAgent';
-import { buildPath, createNavContext, findNearestWalkable, findRandomWalkable, worldToCellIndex } from '../utils/navigation';
+import {
+  buildMultimodalPath,
+  createNavContext,
+  findNearestBoat,
+  findNearestWalkable,
+  findRandomWalkable,
+  worldToCellIndex,
+} from '../utils/navigation';
 
 type DayPhase = 'dawn' | 'noon' | 'dusk' | 'midnight';
 type WeatherType = 'clear' | 'rain' | 'snow';
@@ -235,8 +242,8 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
   }, [size, resolution, seed, waterLevel, forestDensity, rockDensity, reliefScale, riverWidth, lakeThreshold, season, landBias]);
 
   const navContext = useMemo(
-    () => createNavContext(navGrid, navResolution, segmentSize, size),
-    [navGrid, navResolution, segmentSize, size]
+    () => createNavContext(navGrid, navResolution, segmentSize, size, boats),
+    [boats, navGrid, navResolution, segmentSize, size]
   );
 
   const getGroundedHeight = useCallback(
@@ -263,13 +270,15 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       if (destination == null) destination = findRandomWalkable(navContext, startIndex, 0);
       if (destination == null) return;
 
-      const path = buildPath(startIndex, destination, navContext);
+      const boatNearby = findNearestBoat(agent.position, navContext);
+      const path = buildMultimodalPath(startIndex, destination, navContext);
       if (path.length < 2) return;
 
       agent.path = path;
       agent.waypoint = 1;
       agent.targetIndex = destination;
-      agent.mode = path.length > navResolution ? 'running' : 'walking';
+      const traversesWater = path.some((idx) => navContext.grid[idx]?.type === 'water');
+      agent.mode = traversesWater || boatNearby ? 'running' : path.length > navResolution ? 'running' : 'walking';
       agent.lastRepath = performance.now();
       agent.lastProgressCheck = performance.now();
       agent.distanceSinceProgress = 0;
