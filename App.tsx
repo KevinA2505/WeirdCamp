@@ -23,6 +23,10 @@ const App = () => {
     flashlightIntensity: 1500,
     season: 'spring',
     landBias: 0.2,
+    fogDensity: 0.9,
+    horizonCount: 32,
+    horizonRadiusFactor: 0.9,
+    horizonOpacity: 0.7,
   });
 
   const handleRegenerate = () => {
