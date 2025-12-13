@@ -25,44 +25,44 @@ interface WorldProps {
 }
 
 // Sub-component for efficient rendering of thousands of hitboxes
-const HitboxLayer: React.FC<{ 
-    instances: ObjectInstance[], 
-    color: string, 
-    size: number,
-    visible: boolean 
+const HitboxLayer: React.FC<{
+  instances: ObjectInstance[],
+  color: string,
+  size: number,
+  visible: boolean
 }> = ({ instances, color, size, visible }) => {
-    const meshRef = useRef<THREE.InstancedMesh>(null);
-    const dummy = useMemo(() => new THREE.Object3D(), []);
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
 
-    useLayoutEffect(() => {
-        if (!meshRef.current || !visible) return;
-        
-        // Update instances
-        instances.forEach((obj, i) => {
-            dummy.position.set(obj.x, obj.y, obj.z);
-            dummy.scale.set(size, size, size);
-            dummy.updateMatrix();
-            meshRef.current!.setMatrixAt(i, dummy.matrix);
-        });
-        meshRef.current.instanceMatrix.needsUpdate = true;
-    }, [instances, visible, size]);
+  useLayoutEffect(() => {
+    if (!meshRef.current || !visible) return;
 
-    if (!visible || instances.length === 0) return null;
+    // Update instances
+    instances.forEach((obj, i) => {
+      dummy.position.set(obj.x, obj.y, obj.z);
+      dummy.scale.set(size, size, size);
+      dummy.updateMatrix();
+      meshRef.current!.setMatrixAt(i, dummy.matrix);
+    });
+    meshRef.current.instanceMatrix.needsUpdate = true;
+  }, [instances, visible, size]);
 
-    return (
-        <instancedMesh ref={meshRef} args={[undefined, undefined, instances.length]}>
-            <boxGeometry args={[1, 1, 1]} />
-            <meshBasicMaterial color={color} wireframe />
-        </instancedMesh>
-    );
+  if (!visible || instances.length === 0) return null;
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, instances.length]}>
+      <boxGeometry args={[1, 1, 1]} />
+      <meshBasicMaterial color={color} wireframe />
+    </instancedMesh>
+  );
 };
 
 export const World: React.FC<WorldProps> = ({ config }) => {
-  const { 
-    size, resolution, seed, waterLevel, forestDensity, 
-    rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes, 
+  const {
+    size, resolution, seed, waterLevel, forestDensity,
+    rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes,
     dayNightSpeed, flashlightEnabled, flashlightIntensity,
-    season, landBias 
+    season, landBias
   } = config;
 
   // Day/Night State
@@ -98,17 +98,17 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   // Memoize terrain generation
   const { positions, colors, normals, indices, pines, broadleafs, rocks, waterInstances, peakInstances, segmentSize } = useMemo(() => {
     return generateTerrain(
-        size, 
-        resolution, 
-        seed, 
-        waterLevel, 
-        forestDensity, 
-        rockDensity, 
-        reliefScale, 
-        riverWidth, 
-        lakeThreshold,
-        season,
-        landBias
+      size,
+      resolution,
+      seed,
+      waterLevel,
+      forestDensity,
+      rockDensity,
+      reliefScale,
+      riverWidth,
+      lakeThreshold,
+      season,
+      landBias
     );
   }, [size, resolution, seed, waterLevel, forestDensity, rockDensity, reliefScale, riverWidth, lakeThreshold, season, landBias]);
 
@@ -124,20 +124,20 @@ export const World: React.FC<WorldProps> = ({ config }) => {
 
   // Create Boundary Hitboxes (Walls)
   const boundaries = useMemo(() => {
-      const halfSize = size / 2;
-      const wallThickness = 5;
-      const wallHeight = 100;
-      
-      return [
-        // North
-        { pos: [0, 0, -halfSize - wallThickness/2], args: [size + wallThickness * 2, wallHeight, wallThickness] },
-        // South
-        { pos: [0, 0, halfSize + wallThickness/2], args: [size + wallThickness * 2, wallHeight, wallThickness] },
-        // East
-        { pos: [halfSize + wallThickness/2, 0, 0], args: [wallThickness, wallHeight, size] },
-        // West
-        { pos: [-halfSize - wallThickness/2, 0, 0], args: [wallThickness, wallHeight, size] },
-      ];
+    const halfSize = size / 2;
+    const wallThickness = 5;
+    const wallHeight = 100;
+
+    return [
+      // North
+      { pos: [0, 0, -halfSize - wallThickness / 2], args: [size + wallThickness * 2, wallHeight, wallThickness] },
+      // South
+      { pos: [0, 0, halfSize + wallThickness / 2], args: [size + wallThickness * 2, wallHeight, wallThickness] },
+      // East
+      { pos: [halfSize + wallThickness / 2, 0, 0], args: [wallThickness, wallHeight, size] },
+      // West
+      { pos: [-halfSize - wallThickness / 2, 0, 0], args: [wallThickness, wallHeight, size] },
+    ];
   }, [size]);
 
 
@@ -283,16 +283,16 @@ export const World: React.FC<WorldProps> = ({ config }) => {
 
     // 3. Flashlight
     if (flashlightEnabled && lightRef.current && terrainRef.current) {
-        state.raycaster.setFromCamera(state.pointer, state.camera);
-        const intersects = state.raycaster.intersectObject(terrainRef.current, false);
-        
-        if (intersects.length > 0) {
-            const point = intersects[0].point;
-            lightRef.current.position.set(point.x, point.y + 20, point.z);
-            lightRef.current.intensity = flashlightIntensity; 
-        } else {
-            lightRef.current.intensity = 0; 
-        }
+      state.raycaster.setFromCamera(state.pointer, state.camera);
+      const intersects = state.raycaster.intersectObject(terrainRef.current, false);
+
+      if (intersects.length > 0) {
+        const point = intersects[0].point;
+        lightRef.current.position.set(point.x, point.y + 20, point.z);
+        lightRef.current.intensity = flashlightIntensity;
+      } else {
+        lightRef.current.intensity = 0;
+      }
     }
   });
 
@@ -378,31 +378,35 @@ export const World: React.FC<WorldProps> = ({ config }) => {
 
       {/* Environment */}
       <ambientLight color={ambientColor} intensity={ambientIntensity} />
-      
-      <directionalLight 
-        position={sunPosition} 
+
+      <directionalLight
+        position={sunPosition}
         color={sunColor}
-        intensity={sunPosition.y > 0 ? 1.5 : 0} 
-        castShadow 
-        shadow-mapSize={[2048, 2048]} 
-        shadow-bias={-0.0001}
-        shadow-camera-left={-size/1.5}
-        shadow-camera-right={size/1.5}
-        shadow-camera-top={size/1.5}
-        shadow-camera-bottom={-size/1.5}
+        intensity={sunPosition.y > 0 ? 1.5 : 0}
+        castShadow
+        shadow-mapSize={[4096, 4096]}
+        shadow-bias={-0.0002}
+        shadow-normalBias={0.03}
+        shadow-camera-near={1}
+        shadow-camera-far={size * 3}
+        shadow-camera-left={-size / 2}
+        shadow-camera-right={size / 2}
+        shadow-camera-top={size / 2}
+        shadow-camera-bottom={-size / 2}
       />
-      
+
+
       {/* Only render Sky if not too foggy/night */}
       {dayNightSpeed > 0 && (
-          <Sky 
-            sunPosition={sunPosition} 
-            turbidity={season === 'winter' ? 20 : 10} 
-            rayleigh={skyRayleigh} 
-            mieCoefficient={season === 'autumn' ? 0.05 : 0.005} 
-            mieDirectionalG={0.8} 
-          />
+        <Sky
+          sunPosition={sunPosition}
+          turbidity={season === 'winter' ? 20 : 10}
+          rayleigh={skyRayleigh}
+          mieCoefficient={season === 'autumn' ? 0.05 : 0.005}
+          mieDirectionalG={0.8}
+        />
       )}
-      
+
       <Stars
         radius={300}
         depth={50}
@@ -415,43 +419,45 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       />
 
       {flashlightEnabled && (
-        <pointLight 
-            ref={lightRef} 
-            distance={150} 
-            decay={1.5} 
-            color="#fff7ed" 
-            castShadow 
+        <pointLight
+          ref={lightRef}
+          distance={150}
+          decay={1.5}
+          color="#fff7ed"
+          castShadow
         />
       )}
 
       {/* Main Terrain Mesh */}
       <mesh ref={terrainRef} receiveShadow castShadow geometry={geometry}>
-        <meshStandardMaterial 
-            vertexColors 
-            flatShading 
-            roughness={0.8} 
-            metalness={0.05}
-            side={THREE.DoubleSide}
+        <meshStandardMaterial
+          vertexColors
+          flatShading
+          side={THREE.DoubleSide}
+          shadowSide={THREE.FrontSide}
+          roughness={0.8}
+          metalness={0.05}
         />
       </mesh>
-      
+
+
       {/* Instanced Objects (Trees, Rocks) */}
       <TerrainObjects data={pines} type="pine" showHitboxes={showHitboxes} season={season} />
       <TerrainObjects data={broadleafs} type="broadleaf" showHitboxes={showHitboxes} season={season} />
       <TerrainObjects data={rocks} type="rock" showHitboxes={showHitboxes} season={season} />
 
       {/* Special Hitbox Layers (Water & Peaks) */}
-      <HitboxLayer 
-          instances={waterInstances} 
-          color="#06b6d4" // Cyan
-          size={segmentSize} 
-          visible={showHitboxes} 
+      <HitboxLayer
+        instances={waterInstances}
+        color="#06b6d4" // Cyan
+        size={segmentSize}
+        visible={showHitboxes}
       />
       <HitboxLayer
-          instances={peakInstances}
-          color="#f97316" // Orange
-          size={segmentSize}
-          visible={showHitboxes}
+        instances={peakInstances}
+        color="#f97316" // Orange
+        size={segmentSize}
+        visible={showHitboxes}
       />
 
       {/* Atmosphere */}
@@ -460,38 +466,38 @@ export const World: React.FC<WorldProps> = ({ config }) => {
 
 
       {/* Water Plane */}
-       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
         <planeGeometry args={[size * 1.5, size * 1.5]} />
-        <meshStandardMaterial 
-          color={season === 'winter' ? '#94a3b8' : '#3b82f6'} 
-          transparent 
-          opacity={0.7} 
-          roughness={0.05} 
-          metalness={0.5} 
+        <meshStandardMaterial
+          color={season === 'winter' ? '#94a3b8' : '#3b82f6'}
+          transparent
+          opacity={0.7}
+          roughness={0.05}
+          metalness={0.5}
         />
       </mesh>
-      
+
       {/* Map Boundary Walls (Hitboxes) */}
       <group>
         {boundaries.map((b, i) => (
-             <mesh key={`boundary-${i}`} position={new THREE.Vector3(...b.pos)}>
-                <boxGeometry args={[b.args[0], b.args[1], b.args[2]]} />
-                <meshBasicMaterial 
-                    color="red" 
-                    wireframe 
-                    visible={showHitboxes} 
-                    transparent={!showHitboxes} 
-                    opacity={showHitboxes ? 1 : 0} 
-                />
-             </mesh>
+          <mesh key={`boundary-${i}`} position={new THREE.Vector3(...b.pos)}>
+            <boxGeometry args={[b.args[0], b.args[1], b.args[2]]} />
+            <meshBasicMaterial
+              color="red"
+              wireframe
+              visible={showHitboxes}
+              transparent={!showHitboxes}
+              opacity={showHitboxes ? 1 : 0}
+            />
+          </mesh>
         ))}
       </group>
 
       {/* Floor Hitbox visual */}
       {showHitboxes && (
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -10, 0]}>
-            <boxGeometry args={[size, size, 1]} />
-            <meshBasicMaterial color="yellow" wireframe />
+          <boxGeometry args={[size, size, 1]} />
+          <meshBasicMaterial color="yellow" wireframe />
         </mesh>
       )}
     </group>
