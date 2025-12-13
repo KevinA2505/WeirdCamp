@@ -567,8 +567,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       <mesh ref={terrainRef} receiveShadow castShadow geometry={geometry}>
         <meshStandardMaterial
           vertexColors
-          flatShading
-          side={THREE.DoubleSide}
+          side={THREE.FrontSide}
           shadowSide={THREE.FrontSide}
           roughness={0.8}
           metalness={0.05}
