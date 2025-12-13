@@ -263,7 +263,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
   }, [boatStates]);
 
   const navContext = useMemo(
-    () => createNavContext(navGrid, navResolution, segmentSize, size, boatStates),
+    () => createNavContext(navGrid, navResolution, segmentSize, size, boatStates, boatOccupants.current),
     [boatStates, navGrid, navResolution, segmentSize, size]
   );
 
@@ -824,9 +824,23 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
             return;
           }
 
+          if (boatCandidate && agent.targetIndex != null) {
+            const reroute = buildMultimodalPath(currentIndex, agent.targetIndex, navContext);
+            if (reroute.length > 1) {
+              agent.path = reroute;
+              agent.waypoint = 1;
+              agent.state = AgentState.Walking;
+              agent.waitingUntil = 0;
+              agent.boatId = null;
+              agent.boatWaypointStart = null;
+              agent.boatWaypointEnd = null;
+              return;
+            }
+          }
+
           assignNewDestination(agent, true);
-          agent.state = AgentState.Waiting;
-          agent.waitingUntil = now + WAIT_RETRY_MS;
+          agent.state = AgentState.Walking;
+          agent.waitingUntil = 0;
           return;
         }
 
