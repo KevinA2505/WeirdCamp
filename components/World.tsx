@@ -1,13 +1,28 @@
-import React, { useMemo, useRef, useState, useLayoutEffect, useEffect } from 'react';
+import React, { useMemo, useRef, useState, useLayoutEffect, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { WorldConfig, ObjectInstance, NavigationCell } from '../types';
 import { generateTerrain } from '../utils/noise';
 import { TerrainObjects } from './TerrainObjects';
 import { Billboard, Sky, Stars } from '@react-three/drei';
+import { HumanAgent, HumanRuntime } from './HumanAgent';
+import { buildPath, createNavContext, findNearestWalkable, findRandomWalkable, worldToCellIndex } from '../utils/navigation';
 
 type DayPhase = 'dawn' | 'noon' | 'dusk' | 'midnight';
 type WeatherType = 'clear' | 'rain' | 'snow';
+
+export interface WorldHandle {
+  spawnHuman: () => void;
+}
+
+type AgentState = HumanRuntime & {
+  path: number[];
+  waypoint: number;
+  targetIndex: number | null;
+  lastRepath: number;
+  lastProgressCheck: number;
+  distanceSinceProgress: number;
+};
 
 interface WeatherState {
   type: WeatherType;
@@ -64,7 +79,7 @@ const HitboxLayer: React.FC<{
   );
 };
 
-export const World: React.FC<WorldProps> = ({ config }) => {
+export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
   const {
     size, resolution, seed, waterLevel, forestDensity,
     rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes, showNavMesh, showLandNavMesh, showWaterNavMesh,
@@ -87,6 +102,11 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     type: 'clear',
     intensity: 0,
   });
+  const humansRef = useRef<Map<string, AgentState>>(new Map());
+  const [humanIds, setHumanIds] = useState<string[]>([]);
+  const HUMAN_HEIGHT = 2.2;
+  const HUMAN_RADIUS = 0.45;
+  const HUMAN_COLORS = useMemo(() => ['#f97316', '#22d3ee', '#facc15', '#34d399'], []);
   const staticClouds = useMemo<CloudInstance[]>(() => createClouds(8), [size]);
   const [rainClouds, setRainClouds] = useState<CloudInstance[]>([]);
   const [cloudOpacity, setCloudOpacity] = useState(0.18);
@@ -155,6 +175,86 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       landBias
     );
   }, [size, resolution, seed, waterLevel, forestDensity, rockDensity, reliefScale, riverWidth, lakeThreshold, season, landBias]);
+
+  const navContext = useMemo(
+    () => createNavContext(navGrid, navResolution, segmentSize, size),
+    [navGrid, navResolution, segmentSize, size]
+  );
+
+  useEffect(() => {
+    humansRef.current.clear();
+    setHumanIds([]);
+  }, [navContext]);
+
+  const assignNewDestination = useCallback(
+    (agent: AgentState) => {
+      if (!navContext.grid.length) return;
+      const startIndex = findNearestWalkable(agent.position, navContext);
+      if (startIndex == null) return;
+
+      const desiredDistance = Math.max(size * 0.15, 20);
+      let destination = findRandomWalkable(navContext, startIndex, desiredDistance);
+      if (destination == null) destination = findRandomWalkable(navContext, startIndex, 0);
+      if (destination == null) return;
+
+      const path = buildPath(startIndex, destination, navContext);
+      if (path.length < 2) return;
+
+      agent.path = path;
+      agent.waypoint = 1;
+      agent.targetIndex = destination;
+      agent.mode = path.length > navResolution / 2 ? 'running' : 'walking';
+      agent.lastRepath = performance.now();
+      agent.lastProgressCheck = performance.now();
+      agent.distanceSinceProgress = 0;
+
+      const nextCell = navContext.grid[path[1]];
+      if (nextCell) {
+        agent.heading = Math.atan2(nextCell.x - agent.position.x, nextCell.z - agent.position.z);
+      }
+    },
+    [navContext, navResolution, size]
+  );
+
+  const createAgent = useCallback(
+    (cellIndex: number) => {
+      const cell = navContext.grid[cellIndex];
+      if (!cell) return;
+
+      const id = `human-${Math.random().toString(16).slice(2, 8)}`;
+      const position = new THREE.Vector3(cell.x, cell.height + HUMAN_HEIGHT / 2, cell.z);
+
+      const agent: AgentState = {
+        id,
+        position,
+        heading: 0,
+        mode: 'walking',
+        color: HUMAN_COLORS[Math.floor(Math.random() * HUMAN_COLORS.length)],
+        height: HUMAN_HEIGHT,
+        radius: HUMAN_RADIUS,
+        path: [],
+        waypoint: 0,
+        targetIndex: null,
+        lastRepath: performance.now(),
+        lastProgressCheck: performance.now(),
+        distanceSinceProgress: 0,
+      };
+
+      humansRef.current.set(id, agent);
+      setHumanIds((prev) => [...prev, id]);
+      assignNewDestination(agent);
+    },
+    [HUMAN_COLORS, HUMAN_HEIGHT, HUMAN_RADIUS, assignNewDestination, navContext]
+  );
+
+  const spawnHuman = useCallback(() => {
+    if (!navContext.grid.length) return;
+    const index = findRandomWalkable(navContext);
+    if (index == null) return;
+    createAgent(index);
+  }, [createAgent, navContext]);
+
+  useImperativeHandle(ref, () => ({ spawnHuman }), [spawnHuman]);
 
   const seaLevel = waterLevel;
 
@@ -496,6 +596,61 @@ export const World: React.FC<WorldProps> = ({ config }) => {
 
       positionsAttr.needsUpdate = true;
     }
+
+    // 5. Autonomous humanoids navigating land navmesh
+    if (navContext.grid.length && humansRef.current.size) {
+      humansRef.current.forEach((agent) => {
+        if (!agent.path.length || agent.waypoint >= agent.path.length) {
+          assignNewDestination(agent);
+          return;
+        }
+
+        const currentIndex = worldToCellIndex(agent.position, navContext);
+        const currentCell = navContext.grid[currentIndex];
+        if (!currentCell.walkable || currentCell.type !== 'land') {
+          const safeIndex = findNearestWalkable(agent.position, navContext);
+          if (safeIndex != null) {
+            const safeCell = navContext.grid[safeIndex];
+            agent.position.set(safeCell.x, safeCell.height + agent.height / 2, safeCell.z);
+          }
+          assignNewDestination(agent);
+          return;
+        }
+
+        const targetCell = navContext.grid[agent.path[agent.waypoint]];
+        if (!targetCell || !targetCell.walkable) {
+          assignNewDestination(agent);
+          return;
+        }
+
+        const targetPosition = new THREE.Vector3(targetCell.x, targetCell.height + agent.height / 2, targetCell.z);
+        const direction = targetPosition.clone().sub(agent.position);
+        const distance = direction.length();
+
+        if (distance < 0.35) {
+          agent.waypoint += 1;
+          if (agent.waypoint >= agent.path.length) assignNewDestination(agent);
+          return;
+        }
+
+        direction.normalize();
+        const slopeFactor = THREE.MathUtils.clamp(1 - targetCell.slope * 0.22, 0.4, 1);
+        const speed = (agent.mode === 'running' ? 10 : 5.2) * slopeFactor;
+        const step = Math.min(distance, speed * delta);
+        agent.position.addScaledVector(direction, step);
+        agent.heading = Math.atan2(direction.x, direction.z);
+
+        agent.distanceSinceProgress += step;
+        const now = performance.now();
+        if (now - agent.lastProgressCheck > 1200) {
+          if (agent.distanceSinceProgress < 0.5) {
+            assignNewDestination(agent);
+          }
+          agent.distanceSinceProgress = 0;
+          agent.lastProgressCheck = now;
+        }
+      });
+    }
   });
 
   const Precipitation: React.FC<{ type: WeatherType; intensity: number; area: number }> = ({ type, intensity, area }) => {
@@ -701,6 +856,13 @@ export const World: React.FC<WorldProps> = ({ config }) => {
         </mesh>
       )}
 
+      {/* Autonomous humans walking the red navmesh */}
+      <group>
+        {humanIds.map((id) => (
+          <HumanAgent key={id} agentId={id} runtimeRef={humansRef} showHitboxes={showHitboxes} />
+        ))}
+      </group>
+
 
       {/* Instanced Objects (Trees, Rocks) */}
       <TerrainObjects data={pines} type="pine" showHitboxes={showHitboxes} season={season} />
@@ -764,4 +926,4 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       )}
     </group>
   );
-};
+});
