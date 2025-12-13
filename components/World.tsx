@@ -9,6 +9,8 @@ import { Billboard, Sky, Stars } from '@react-three/drei';
 type DayPhase = 'dawn' | 'noon' | 'dusk' | 'midnight';
 type WeatherType = 'clear' | 'rain' | 'snow';
 
+const WATER_LEVEL = 0;
+
 interface WeatherState {
   type: WeatherType;
   intensity: number;
@@ -35,7 +37,7 @@ const HitboxLayer: React.FC<{
   const dummy = useMemo(() => new THREE.Object3D(), []);
 
   useLayoutEffect(() => {
-    if (!meshRef.current || !visible) return;
+    if (!meshRef.current) return;
 
     // Update instances
     instances.forEach((obj, i) => {
@@ -47,12 +49,20 @@ const HitboxLayer: React.FC<{
     meshRef.current.instanceMatrix.needsUpdate = true;
   }, [instances, visible, size]);
 
-  if (!visible || instances.length === 0) return null;
+  if (instances.length === 0) return null;
+
+  const opacity = visible ? 0.85 : 0;
 
   return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, instances.length]}>
+    <instancedMesh ref={meshRef} args={[undefined, undefined, instances.length]} frustumCulled={false}>
       <boxGeometry args={[1, 1, 1]} />
-      <meshBasicMaterial color={color} wireframe />
+      <meshBasicMaterial
+        color={color}
+        wireframe
+        transparent
+        opacity={opacity}
+        depthWrite={visible}
+      />
     </instancedMesh>
   );
 };
@@ -130,6 +140,32 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
     return geo;
   }, [positions, colors, normals, indices]);
+
+  const landHitboxGeometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const landIndices: number[] = [];
+    for (let i = 0; i < indices.length; i += 3) {
+      const a = indices[i] * 3;
+      const b = indices[i + 1] * 3;
+      const c = indices[i + 2] * 3;
+
+      const ay = positions[a + 1];
+      const by = positions[b + 1];
+      const cy = positions[c + 1];
+
+      if (ay >= WATER_LEVEL && by >= WATER_LEVEL && cy >= WATER_LEVEL) {
+        landIndices.push(indices[i], indices[i + 1], indices[i + 2]);
+      }
+    }
+
+    const IndexArray = positions.length / 3 > 65535 ? Uint32Array : Uint16Array;
+    geo.setIndex(new THREE.BufferAttribute(new IndexArray(landIndices), 1));
+    geo.computeVertexNormals();
+
+    return geo;
+  }, [positions, indices]);
 
   // Create Boundary Hitboxes (Walls)
   const boundaries = useMemo(() => {
@@ -446,6 +482,20 @@ export const World: React.FC<WorldProps> = ({ config }) => {
           shadowSide={THREE.FrontSide}
           roughness={0.8}
           metalness={0.05}
+        />
+      </mesh>
+
+      {/* Ground hitbox that follows the terrain surface (triangulated) */}
+      <mesh geometry={landHitboxGeometry} castShadow={false} receiveShadow={false}>
+        <meshBasicMaterial
+          color="#22c55e"
+          wireframe
+          transparent
+          opacity={showHitboxes ? 0.65 : 0}
+          depthWrite={false}
+          polygonOffset
+          polygonOffsetFactor={-1}
+          polygonOffsetUnits={-1}
         />
       </mesh>
 
