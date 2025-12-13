@@ -1,19 +1,11 @@
 import * as THREE from 'three';
-import { BoatInstance, NavigationCell } from '../types';
+import { NavigationCell } from '../types';
 
 interface GridContext {
   grid: NavigationCell[];
   resolution: number;
   segmentSize: number;
   worldSize: number;
-  boats: BoatNode[];
-  boatOccupants: Map<string, string | null>;
-}
-
-interface BoatNode {
-  cellIndex: number;
-  instance: BoatInstance;
-  occupantId: string | null;
 }
 
 interface PathNode {
@@ -31,10 +23,6 @@ interface PathResult {
 }
 
 const WALK_SPEED = 1;
-const BOAT_SPEED = 2.5;
-const EMBARK_COST = 12;
-const DISEMBARK_COST = 12;
-const MAX_BOAT_SEARCH_DISTANCE = 120;
 
 const neighborOffsets = [
   [1, 0],
@@ -171,7 +159,7 @@ const buildAStar = (
   const heuristic = (index: number) => {
     const cell = grid[index];
     const distance = Math.hypot(cell.x - goalCell.x, cell.z - goalCell.z);
-    const speed = mode === 'water' ? BOAT_SPEED : WALK_SPEED;
+    const speed = mode === 'water' ? 1 : WALK_SPEED;
     return distance / speed;
   };
 
@@ -220,13 +208,9 @@ const buildAStar = (
       const stepCost = Math.hypot(di, dj) * segmentSize;
       let tentativeG = current.g + stepCost;
 
-      if (mode === 'land') {
-        const slopePenalty = THREE.MathUtils.clamp(neighbor.slope - 0.3, 0, 1) * 6;
-        const heightPenalty = Math.max(0, neighbor.height - goalCell.height) * 0.03;
-        tentativeG = current.g + stepCost * (1 + slopePenalty + heightPenalty);
-      } else {
-        tentativeG = current.g + stepCost / BOAT_SPEED;
-      }
+      const slopePenalty = THREE.MathUtils.clamp(neighbor.slope - 0.3, 0, 1) * 6;
+      const heightPenalty = Math.max(0, neighbor.height - goalCell.height) * 0.03;
+      tentativeG = current.g + stepCost * (1 + slopePenalty + heightPenalty);
 
       const existing = open.get(neighborIndex);
       if (!existing || tentativeG < existing.g) {
@@ -253,11 +237,6 @@ const calculatePathCost = (path: number[], context: GridContext, mode: 'land' | 
     const ci = Math.floor(current / resolution);
     const cj = current % resolution;
     const stepCost = Math.hypot(pi - ci, pj - cj) * segmentSize;
-    if (mode === 'water') {
-      cost += stepCost / BOAT_SPEED;
-      continue;
-    }
-
     const neighbor = getCell(current, context);
     const target = getCell(path[path.length - 1], context);
     const slopePenalty = THREE.MathUtils.clamp(neighbor.slope - 0.3, 0, 1) * 6;
@@ -268,179 +247,12 @@ const calculatePathCost = (path: number[], context: GridContext, mode: 'land' | 
   return cost;
 };
 
-const combinePaths = (...segments: number[][]) => {
-  return segments.reduce<number[]>((acc, segment) => {
-    if (!segment.length) return acc;
-    if (!acc.length) return [...segment];
-    return [...acc, ...segment.slice(1)];
-  }, []);
-};
-
-const findNearestShorelineLand = (
-  targetIndex: number,
-  context: GridContext,
-  maxRadiusCells = 12
-): number | null => {
-  const { resolution } = context;
-  const centerI = Math.floor(targetIndex / resolution);
-  const centerJ = targetIndex % resolution;
-
-  for (let radius = 0; radius <= maxRadiusCells; radius++) {
-    for (let di = -radius; di <= radius; di++) {
-      for (let dj = -radius; dj <= radius; dj++) {
-        const i = clampToGrid(centerI + di, resolution);
-        const j = clampToGrid(centerJ + dj, resolution);
-        const idx = buildIndex(i, j, resolution);
-        const cell = getCell(idx, context);
-        if (isLandCell(cell) && shorelineNeighbors(idx, context)) return idx;
-      }
-    }
-  }
-
-  return null;
-};
-
-const findAdjacentWaterCell = (landIndex: number, context: GridContext) => {
-  const { resolution } = context;
-  const ci = Math.floor(landIndex / resolution);
-  const cj = landIndex % resolution;
-
-  for (const [di, dj] of neighborOffsets) {
-    const ni = ci + di;
-    const nj = cj + dj;
-    if (ni < 0 || nj < 0 || ni >= resolution || nj >= resolution) continue;
-    const idx = buildIndex(ni, nj, resolution);
-    const cell = getCell(idx, context);
-    if (isWaterCell(cell)) return idx;
-  }
-
-  return null;
-};
-
-const estimateWaterCrossingRatio = (startIndex: number, goalIndex: number, context: GridContext) => {
-  const samples = 12;
-  const start = getCell(startIndex, context);
-  const goal = getCell(goalIndex, context);
-  if (!start || !goal) return 0;
-
-  let waterHits = 0;
-  const from = new THREE.Vector2(start.x, start.z);
-  const to = new THREE.Vector2(goal.x, goal.z);
-
-  for (let i = 1; i <= samples; i++) {
-    const t = i / (samples + 1);
-    const point = new THREE.Vector2().lerpVectors(from, to, t);
-    const idx = worldValuesToCellIndex(point.x, point.y, context.resolution, context.segmentSize, context.worldSize);
-    const cell = getCell(idx, context);
-    if (isWaterCell(cell)) waterHits += 1;
-  }
-
-  return waterHits / samples;
-};
-
-export const findNearestBoat = (
-  position: THREE.Vector3,
-  context: GridContext,
-  maxDistance = MAX_BOAT_SEARCH_DISTANCE
-): BoatNode | null => {
-  if (!context.boats.length) return null;
-
-  let closest: BoatNode | null = null;
-  let minDistance = maxDistance;
-
-  for (const boat of context.boats) {
-    const cell = getCell(boat.cellIndex, context);
-    if (!cell) continue;
-    const distance = Math.hypot(position.x - cell.x, position.z - cell.z);
-    if (distance <= minDistance) {
-      minDistance = distance;
-      closest = boat;
-    }
-  }
-
-  return closest;
-};
-
 export const buildMultimodalPath = (
   startIndex: number,
   goalIndex: number,
   context: GridContext
 ): number[] => {
-  const landPlan = buildAStar(startIndex, goalIndex, context, 'land');
-  const landCost = calculatePathCost(landPlan.path, context, 'land');
-
-  const startCell = getCell(startIndex, context);
-  const goalCell = getCell(goalIndex, context);
-  if (!startCell || !goalCell) return landPlan.path;
-
-  const waterSegment = {
-    start: new THREE.Vector2(startCell.x, startCell.z),
-    end: new THREE.Vector2(goalCell.x, goalCell.z),
-  };
-
-  const crossingRatio = estimateWaterCrossingRatio(startIndex, goalIndex, context);
-
-  if (!context.boats.length) {
-    return landPlan.path;
-  }
-
-  const disembarkLand = findNearestShorelineLand(goalIndex, context);
-  if (disembarkLand == null) return landPlan.path;
-
-  let bestPath = landPlan.path;
-  let bestCost = landCost;
-
-  for (const boat of context.boats) {
-    const occupant = boat.occupantId ?? context.boatOccupants.get(boat.instance.id) ?? null;
-    if (occupant) continue;
-
-    const boatCell = getCell(boat.cellIndex, context);
-    if (!boatCell) continue;
-
-    const distanceFromCorridor = distanceToSegment(
-      new THREE.Vector2(boatCell.x, boatCell.z),
-      waterSegment.start,
-      waterSegment.end
-    );
-    if (distanceFromCorridor > MAX_BOAT_SEARCH_DISTANCE) continue;
-
-    const embarkLand = findNearestShorelineLand(boat.cellIndex, context);
-    if (embarkLand == null) continue;
-
-    const boatEntryWater = findAdjacentWaterCell(embarkLand, context) ?? boat.cellIndex;
-    const boatExitWater = findAdjacentWaterCell(disembarkLand, context);
-    if (boatExitWater == null) continue;
-
-    const toBoatLand = buildAStar(startIndex, embarkLand, context, 'land');
-    const waterLeg = buildAStar(boatEntryWater, boatExitWater, context, 'water');
-    const fromBoatLand = buildAStar(disembarkLand, goalIndex, context, 'land');
-
-    if (!toBoatLand.path.length || !waterLeg.path.length || !fromBoatLand.path.length) {
-      continue;
-    }
-
-    const approachCost =
-      Math.hypot(startCell.x - boatCell.x, startCell.z - boatCell.z) / WALK_SPEED;
-
-    const boatCost =
-      calculatePathCost(toBoatLand.path, context, 'land') +
-      EMBARK_COST +
-      approachCost +
-      calculatePathCost(waterLeg.path, context, 'water') +
-      DISEMBARK_COST +
-      calculatePathCost(fromBoatLand.path, context, 'land');
-
-    const prefersBoat =
-      boatCost < bestCost &&
-      ((crossingRatio > 0.35 && boatCost <= landCost * 1.35) || boatCost < landCost * 0.85 || !Number.isFinite(landCost));
-
-    if (!prefersBoat) continue;
-
-    bestCost = boatCost;
-    bestPath = combinePaths(toBoatLand.path, waterLeg.path, fromBoatLand.path);
-  }
-
-  return bestPath;
+  return buildAStar(startIndex, goalIndex, context, 'land').path;
 };
 
 export const buildPath = (
@@ -459,16 +271,9 @@ export const createNavContext = (
   grid: NavigationCell[],
   resolution: number,
   segmentSize: number,
-  worldSize: number,
-  boats: BoatInstance[] = [],
-  boatOccupants: Map<string, string | null> = new Map()
+  worldSize: number
 ): GridContext => {
-  const boatNodes: BoatNode[] = boats.map((instance) => {
-    const cellIndex = worldValuesToCellIndex(instance.x, instance.z, resolution, segmentSize, worldSize);
-    return { cellIndex, instance, occupantId: boatOccupants.get(instance.id) ?? null };
-  });
-
-  return { grid, resolution, segmentSize, worldSize, boats: boatNodes, boatOccupants };
+  return { grid, resolution, segmentSize, worldSize };
 };
 
 export type { GridContext };

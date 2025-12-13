@@ -36,7 +36,6 @@ export interface TerrainData {
   // New Hitbox Data
   waterInstances: ObjectInstance[];
   peakInstances: ObjectInstance[];
-  boats: BoatInstance[];
   segmentSize: number; // Export segment size for hitbox scaling
   navGrid: NavigationCell[];
   navResolution: number;
@@ -48,27 +47,6 @@ export interface ObjectInstance {
   z: number;
   scale: number;
   id: string;
-}
-
-export interface BoatInstance {
-  id: string;
-  x: number;
-  y: number;
-  z: number;
-  rotation: number;
-  scale: number;
-  mass: number;
-  friction: number;
-  buoyancy: number;
-}
-
-export enum AgentState {
-  Walking = 'Walking',
-  SeekingBoat = 'SeekingBoat',
-  Mounting = 'Mounting',
-  Sailing = 'Sailing',
-  Dismounting = 'Dismounting',
-  Waiting = 'Waiting',
 }
 
 export enum BiomeType {
