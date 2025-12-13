@@ -184,7 +184,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
   );
 
   const getGroundedHeight = useCallback(
-    (cellHeight: number, agentHeight: number) => cellHeight + agentHeight / 2 - HUMAN_GROUND_OFFSET,
+    (cellHeight: number) => cellHeight + HUMAN_GROUND_OFFSET,
     [HUMAN_GROUND_OFFSET]
   );
 
@@ -229,7 +229,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       if (!cell) return;
 
       const id = `human-${Math.random().toString(16).slice(2, 8)}`;
-      const position = new THREE.Vector3(cell.x, getGroundedHeight(cell.height, HUMAN_HEIGHT), cell.z);
+      const position = new THREE.Vector3(cell.x, getGroundedHeight(cell.height), cell.z);
 
       const agent: AgentState = {
         id,
@@ -618,7 +618,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
           const safeIndex = findNearestWalkable(agent.position, navContext);
           if (safeIndex != null) {
             const safeCell = navContext.grid[safeIndex];
-            agent.position.set(safeCell.x, getGroundedHeight(safeCell.height, agent.height), safeCell.z);
+            agent.position.set(safeCell.x, getGroundedHeight(safeCell.height), safeCell.z);
           }
           assignNewDestination(agent);
           return;
@@ -630,7 +630,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
           return;
         }
 
-        const targetPosition = new THREE.Vector3(targetCell.x, getGroundedHeight(targetCell.height, agent.height), targetCell.z);
+        const targetPosition = new THREE.Vector3(targetCell.x, getGroundedHeight(targetCell.height), targetCell.z);
         const direction = targetPosition.clone().sub(agent.position);
         const distance = direction.length();
 
