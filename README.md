@@ -26,3 +26,8 @@ View your app in AI Studio: https://ai.studio/apps/temp/1
 ## Notas del proyecto
 - Los controles de simulación se encuentran en el menú inicial; al iniciar la simulación puedes volver al menú para ajustar parámetros y regenerar el mundo.
 - Si cambias el puerto o la ruta base en `vite.config.ts`, actualiza tus scripts de despliegue en consecuencia.
+
+## Verificación visual de la malla
+- Activa la opción de "nav mesh" en la interfaz y comprueba que las celdas de agua aparecen en gris (#808080) y las de tierra en rojo (#ff0000).
+- El overlay de caminabilidad se muestra como una segunda capa con el mismo trazado: verde para celdas transitables, rojo para bloqueadas y azul para agua.
+- Ajusta el nivel de agua o la densidad de relieve para validar que la paleta se mantiene coherente al regenerar el terreno.

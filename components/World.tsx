@@ -148,17 +148,21 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     );
   }, [size, resolution, seed, waterLevel, forestDensity, rockDensity, reliefScale, riverWidth, lakeThreshold, season, landBias]);
 
-  const navigationGeometry = useMemo(() => {
-    if (!navGrid.length) return null;
+  const navigationGeometries = useMemo(() => {
+    if (!navGrid.length) return { base: null, walkability: null };
 
     const vertexCount = navGrid.length;
     const positions = new Float32Array(vertexCount * 3);
-    const vertexColors = new Float32Array(vertexCount * 3);
     const overlayHeight = 0.12;
 
+    const baseWaterColor = new THREE.Color('#808080');
+    const baseLandColor = new THREE.Color('#ff0000');
     const walkableColor = new THREE.Color('#22c55e');
     const blockedColor = new THREE.Color('#ef4444');
-    const waterColor = new THREE.Color('#38bdf8');
+    const waterOverlayColor = new THREE.Color('#38bdf8');
+
+    const baseColors = new Float32Array(vertexCount * 3);
+    const walkabilityColors = new Float32Array(vertexCount * 3);
 
     navGrid.forEach((cell, i) => {
       const baseY = cell.flags.isWater ? Math.max(cell.height, waterLevel) : cell.height;
@@ -167,10 +171,17 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       positions[i * 3 + 1] = baseY + overlayHeight;
       positions[i * 3 + 2] = cell.z;
 
-      const targetColor = cell.flags.isWater ? waterColor : (cell.walkable ? walkableColor : blockedColor);
-      vertexColors[i * 3] = targetColor.r;
-      vertexColors[i * 3 + 1] = targetColor.g;
-      vertexColors[i * 3 + 2] = targetColor.b;
+      const cellBaseColor = cell.flags.isWater ? baseWaterColor : baseLandColor;
+      baseColors[i * 3] = cellBaseColor.r;
+      baseColors[i * 3 + 1] = cellBaseColor.g;
+      baseColors[i * 3 + 2] = cellBaseColor.b;
+
+      const walkableTarget = cell.flags.isWater
+        ? waterOverlayColor
+        : (cell.walkable ? walkableColor : blockedColor);
+      walkabilityColors[i * 3] = walkableTarget.r;
+      walkabilityColors[i * 3 + 1] = walkableTarget.g;
+      walkabilityColors[i * 3 + 2] = walkableTarget.b;
     });
 
     const indices: number[] = [];
@@ -186,13 +197,21 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     }
 
     const IndexArray = navGrid.length > 65535 ? Uint32Array : Uint16Array;
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(vertexColors, 3));
-    geometry.setIndex(new THREE.BufferAttribute(new IndexArray(indices), 1));
-    geometry.computeVertexNormals();
+    const indexAttribute = new THREE.BufferAttribute(new IndexArray(indices), 1);
 
-    return geometry;
+    const buildGeometry = (colors: Float32Array) => {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geometry.setIndex(indexAttribute.clone());
+      geometry.computeVertexNormals();
+      return geometry;
+    };
+
+    return {
+      base: buildGeometry(baseColors),
+      walkability: buildGeometry(walkabilityColors),
+    };
   }, [navGrid, navResolution, waterLevel]);
 
   // Geometry
@@ -571,8 +590,20 @@ export const World: React.FC<WorldProps> = ({ config }) => {
         />
       </mesh>
 
-      {showNavMesh && navigationGeometry && (
-        <mesh geometry={navigationGeometry} frustumCulled={false}>
+      {showNavMesh && navigationGeometries.base && (
+        <mesh geometry={navigationGeometries.base} frustumCulled={false}>
+          <meshBasicMaterial
+            vertexColors
+            transparent
+            opacity={0.4}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+
+      {showNavMesh && navigationGeometries.walkability && (
+        <mesh geometry={navigationGeometries.walkability} frustumCulled={false}>
           <meshBasicMaterial
             vertexColors
             wireframe
