@@ -9,18 +9,29 @@ interface SimulationViewProps {
   config: WorldConfig;
   onBackToMenu: () => void;
   onRegenerate: () => void;
+  onApplySmoothing: () => void;
+  onRecalculateNormals: () => void;
   updateConfig: (key: keyof WorldConfig, value: number | boolean | string) => void;
+  refreshKey: number;
+  recalcNormalsKey: number;
 }
 
-export const SimulationView: React.FC<SimulationViewProps> = ({ config, onBackToMenu, onRegenerate, updateConfig }) => {
+export const SimulationView: React.FC<SimulationViewProps> = ({ config, onBackToMenu, onRegenerate, onApplySmoothing, onRecalculateNormals, updateConfig, refreshKey, recalcNormalsKey }) => {
   return (
     <div className="flex h-screen w-screen bg-gray-900 text-white overflow-hidden">
-      <ControlPanel config={config} onBackToMenu={onBackToMenu} onRegenerate={onRegenerate} updateConfig={updateConfig} />
+      <ControlPanel
+        config={config}
+        onBackToMenu={onBackToMenu}
+        onRegenerate={onRegenerate}
+        onApplySmoothing={onApplySmoothing}
+        onRecalculateNormals={onRecalculateNormals}
+        updateConfig={updateConfig}
+      />
 
       <main className="flex-1 relative bg-black">
-        <Canvas shadows camera={{ position: [50, 50, 50], fov: 45 }}>
+        <Canvas shadows={config.shadowsEnabled} camera={{ position: [50, 50, 50], fov: 45 }}>
           <Suspense fallback={null}>
-            <World config={config} />
+            <World config={config} refreshKey={refreshKey} recalcNormalsKey={recalcNormalsKey} />
             <OrbitControls
               enableDamping
               dampingFactor={0.1}

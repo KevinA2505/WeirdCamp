@@ -4,12 +4,17 @@ export interface WorldConfig {
   size: number;
   resolution: number; // Segments per side
   seed: number;
+  warpStrength: number;
+  heightSmoothingIterations: number;
   forestDensity: number;
   rockDensity: number;
   reliefScale: number;
-  riverWidth: number; 
-  lakeThreshold: number; 
+  riverWidth: number;
+  lakeThreshold: number;
   showHitboxes: boolean;
+  shadowsEnabled: boolean;
+  unlitMaterial: boolean;
+  wireframeEnabled: boolean;
   dayNightSpeed: number;
   flashlightEnabled: boolean;
   flashlightIntensity: number;
@@ -22,7 +27,6 @@ export interface WorldConfig {
 export interface TerrainData {
   positions: Float32Array;
   colors: Float32Array;
-  normals: Float32Array;
   indices: Uint16Array | Uint32Array;
   pines: ObjectInstance[];
   broadleafs: ObjectInstance[];

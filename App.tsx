@@ -11,21 +11,37 @@ const App = () => {
     size: 260,
     resolution: 140,
     seed: Math.random() * 10000,
+    warpStrength: 20,
+    heightSmoothingIterations: 2,
     forestDensity: 0.25,
     rockDensity: 0.05,
     reliefScale: 0.95,
     riverWidth: 12,
     lakeThreshold: 0.12,
     showHitboxes: false,
+    shadowsEnabled: true,
+    unlitMaterial: false,
+    wireframeEnabled: false,
     dayNightSpeed: 0.8,
     flashlightEnabled: false,
     flashlightIntensity: 1500,
     season: 'spring',
     landBias: 0.2,
   });
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [recalcNormalsKey, setRecalcNormalsKey] = useState(0);
 
   const handleRegenerate = () => {
     setConfig((prev) => ({ ...prev, seed: Math.random() * 10000 }));
+    setRefreshKey((prev) => prev + 1);
+  };
+
+  const handleApplySmoothing = () => {
+    setRefreshKey((prev) => prev + 1);
+  };
+
+  const handleRecalculateNormals = () => {
+    setRecalcNormalsKey((prev) => prev + 1);
   };
 
   const updateConfig = (key: keyof WorldConfig, value: number | boolean | string) => {
@@ -46,7 +62,11 @@ const App = () => {
       config={config}
       onBackToMenu={() => setView('MENU')}
       onRegenerate={handleRegenerate}
+      onApplySmoothing={handleApplySmoothing}
+      onRecalculateNormals={handleRecalculateNormals}
       updateConfig={updateConfig}
+      refreshKey={refreshKey}
+      recalcNormalsKey={recalcNormalsKey}
     />
   );
 };

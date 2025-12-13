@@ -6,10 +6,12 @@ interface ControlPanelProps {
   config: WorldConfig;
   onBackToMenu: () => void;
   onRegenerate: () => void;
+  onApplySmoothing: () => void;
+  onRecalculateNormals: () => void;
   updateConfig: (key: keyof WorldConfig, value: number | boolean | string) => void;
 }
 
-export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu, onRegenerate, updateConfig }) => {
+export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu, onRegenerate, onApplySmoothing, onRecalculateNormals, updateConfig }) => {
   return (
     <aside className="w-80 flex-shrink-0 bg-gray-800 p-6 flex flex-col gap-6 shadow-xl z-10 overflow-y-auto">
       <div className="border-b border-gray-700 pb-4 flex justify-between items-center">
@@ -45,20 +47,59 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu
         </div>
 
         <div className="space-y-4 pt-4 border-t border-gray-700">
+          <h3 className="font-semibold text-gray-200 text-sm">Terreno y deformaciones</h3>
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-gray-400">
-              <label>Vértices (Resolución)</label>
+              <label>Resolución del terreno</label>
               <span className="text-purple-300">{config.resolution}</span>
             </div>
             <input
               type="range"
               min="60"
-              max="200"
+              max="240"
               step="10"
               value={config.resolution}
               onChange={(e) => updateConfig('resolution', Number(e.target.value))}
               className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-400"
             />
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-gray-400">
+              <label>Warp strength</label>
+              <span className="text-blue-300">{config.warpStrength.toFixed(0)}</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="60"
+              step="1"
+              value={config.warpStrength}
+              onChange={(e) => updateConfig('warpStrength', Number(e.target.value))}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-gray-400">
+              <label>Suavizado de altura (iteraciones)</label>
+              <span className="text-emerald-300">{config.heightSmoothingIterations}</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="6"
+              step="1"
+              value={config.heightSmoothingIterations}
+              onChange={(e) => updateConfig('heightSmoothingIterations', Number(e.target.value))}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+            />
+            <button
+              onClick={onApplySmoothing}
+              className="w-full mt-2 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded shadow"
+            >
+              Aplicar suavizado y regenerar
+            </button>
           </div>
         </div>
 
@@ -106,6 +147,42 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu
               onChange={(e) => updateConfig('landBias', Number(e.target.value))}
               className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
             />
+          </div>
+        </div>
+
+        <div className="space-y-3 pt-4 border-t border-gray-700">
+          <h3 className="font-semibold text-gray-300 text-sm">Depuración visual</h3>
+          <div className="grid grid-cols-1 gap-2 text-xs text-gray-200">
+            <label className="flex items-center justify-between bg-gray-700/60 px-3 py-2 rounded">
+              <span>Sombras ON/OFF</span>
+              <input
+                type="checkbox"
+                checked={config.shadowsEnabled}
+                onChange={(e) => updateConfig('shadowsEnabled', e.target.checked)}
+              />
+            </label>
+            <label className="flex items-center justify-between bg-gray-700/60 px-3 py-2 rounded">
+              <span>Sin luz (MeshBasicMaterial)</span>
+              <input
+                type="checkbox"
+                checked={config.unlitMaterial}
+                onChange={(e) => updateConfig('unlitMaterial', e.target.checked)}
+              />
+            </label>
+            <label className="flex items-center justify-between bg-gray-700/60 px-3 py-2 rounded">
+              <span>Wireframe/Edges</span>
+              <input
+                type="checkbox"
+                checked={config.wireframeEnabled}
+                onChange={(e) => updateConfig('wireframeEnabled', e.target.checked)}
+              />
+            </label>
+            <button
+              onClick={onRecalculateNormals}
+              className="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded"
+            >
+              Recalcular normales
+            </button>
           </div>
         </div>
       </div>

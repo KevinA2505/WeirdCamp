@@ -7,9 +7,10 @@ interface InstancedProps {
   type: 'pine' | 'broadleaf' | 'rock';
   showHitboxes: boolean;
   season: Season;
+  shadowsEnabled: boolean;
 }
 
-export const TerrainObjects: React.FC<InstancedProps> = ({ data, type, showHitboxes, season }) => {
+export const TerrainObjects: React.FC<InstancedProps> = ({ data, type, showHitboxes, season, shadowsEnabled }) => {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
 
@@ -88,8 +89,8 @@ export const TerrainObjects: React.FC<InstancedProps> = ({ data, type, showHitbo
       <instancedMesh
         ref={meshRef}
         args={[geometry, material, data.length]}
-        castShadow
-        receiveShadow
+        castShadow={shadowsEnabled}
+        receiveShadow={shadowsEnabled}
       />
       
       {/* Hitbox Visualization */}

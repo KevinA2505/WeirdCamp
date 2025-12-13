@@ -1,10 +1,11 @@
-import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
-import { useFrame } from '@react-three/fiber';
+import React, { useMemo, useRef, useState, useLayoutEffect, useEffect } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { WorldConfig, ObjectInstance } from '../types';
 import { generateTerrain } from '../utils/noise';
 import { TerrainObjects } from './TerrainObjects';
 import { Billboard, Sky, Stars } from '@react-three/drei';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 type DayPhase = 'dawn' | 'noon' | 'dusk' | 'midnight';
 type WeatherType = 'clear' | 'rain' | 'snow';
@@ -22,6 +23,8 @@ interface CloudInstance {
 
 interface WorldProps {
   config: WorldConfig;
+  refreshKey: number;
+  recalcNormalsKey: number;
 }
 
 // Sub-component for efficient rendering of thousands of hitboxes
@@ -57,13 +60,16 @@ const HitboxLayer: React.FC<{
     );
 };
 
-export const World: React.FC<WorldProps> = ({ config }) => {
-  const { 
-    size, resolution, seed, waterLevel, forestDensity, 
-    rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes, 
+export const World: React.FC<WorldProps> = ({ config, refreshKey, recalcNormalsKey }) => {
+  const {
+    size, resolution, seed, waterLevel, forestDensity,
+    rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes,
     dayNightSpeed, flashlightEnabled, flashlightIntensity,
-    season, landBias 
+    season, landBias, warpStrength, heightSmoothingIterations,
+    shadowsEnabled, unlitMaterial, wireframeEnabled
   } = config;
+
+  const { gl } = useThree();
 
   // Day/Night State
   const [sunPosition, setSunPosition] = useState(new THREE.Vector3(100, 100, 100));
@@ -94,33 +100,75 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   const lightRef = useRef<THREE.PointLight>(null);
   const terrainRef = useRef<THREE.Mesh>(null);
   const precipitationRef = useRef<THREE.Points>(null);
+  const shadowMapSize = useMemo(() => Math.max(1024, Math.min(4096, resolution * 8)), [resolution]);
+
+  useEffect(() => {
+    gl.shadowMap.enabled = shadowsEnabled;
+    gl.shadowMap.type = THREE.PCFSoftShadowMap;
+  }, [gl, shadowsEnabled]);
 
   // Memoize terrain generation
-  const { positions, colors, normals, indices, pines, broadleafs, rocks, waterInstances, peakInstances, segmentSize } = useMemo(() => {
+  const { positions, colors, indices, pines, broadleafs, rocks, waterInstances, peakInstances, segmentSize } = useMemo(() => {
     return generateTerrain(
-        size, 
-        resolution, 
-        seed, 
-        waterLevel, 
-        forestDensity, 
-        rockDensity, 
-        reliefScale, 
-        riverWidth, 
+        size,
+        resolution,
+        seed,
+        warpStrength,
+        heightSmoothingIterations,
+        waterLevel,
+        forestDensity,
+        rockDensity,
+        reliefScale,
+        riverWidth,
         lakeThreshold,
         season,
         landBias
     );
-  }, [size, resolution, seed, waterLevel, forestDensity, rockDensity, reliefScale, riverWidth, lakeThreshold, season, landBias]);
+  }, [size, resolution, seed, warpStrength, heightSmoothingIterations, waterLevel, forestDensity, rockDensity, reliefScale, riverWidth, lakeThreshold, season, landBias, refreshKey]);
 
   // Geometry
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
-    return geo;
-  }, [positions, colors, normals, indices]);
+    const merged = BufferGeometryUtils.mergeVertices(geo);
+    merged.computeVertexNormals();
+    return merged;
+  }, [positions, colors, indices]);
+
+  const terrainMaterial = useMemo(() => {
+    if (unlitMaterial) {
+      return (
+        <meshBasicMaterial
+          vertexColors
+          wireframe={wireframeEnabled}
+          side={THREE.DoubleSide}
+        />
+      );
+    }
+
+    return (
+      <meshStandardMaterial
+          vertexColors
+          flatShading={false}
+          roughness={0.65}
+          metalness={0.08}
+          side={THREE.DoubleSide}
+          wireframe={wireframeEnabled}
+      />
+    );
+  }, [unlitMaterial, wireframeEnabled]);
+
+  useEffect(() => {
+    if (terrainRef.current) {
+      const geo = terrainRef.current.geometry as THREE.BufferGeometry;
+      geo.computeVertexNormals();
+      if (geo.attributes.normal) {
+        geo.attributes.normal.needsUpdate = true;
+      }
+    }
+  }, [recalcNormalsKey]);
 
   // Create Boundary Hitboxes (Walls)
   const boundaries = useMemo(() => {
@@ -379,13 +427,14 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       {/* Environment */}
       <ambientLight color={ambientColor} intensity={ambientIntensity} />
       
-      <directionalLight 
-        position={sunPosition} 
+      <directionalLight
+        position={sunPosition}
         color={sunColor}
-        intensity={sunPosition.y > 0 ? 1.5 : 0} 
-        castShadow 
-        shadow-mapSize={[2048, 2048]} 
-        shadow-bias={-0.0001}
+        intensity={sunPosition.y > 0 ? 1.5 : 0}
+        castShadow={shadowsEnabled}
+        shadow-mapSize={[shadowMapSize, shadowMapSize]}
+        shadow-bias={-0.0005}
+        shadow-normalBias={0.02}
         shadow-camera-left={-size/1.5}
         shadow-camera-right={size/1.5}
         shadow-camera-top={size/1.5}
@@ -415,30 +464,24 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       />
 
       {flashlightEnabled && (
-        <pointLight 
-            ref={lightRef} 
-            distance={150} 
-            decay={1.5} 
-            color="#fff7ed" 
-            castShadow 
+        <pointLight
+            ref={lightRef}
+            distance={150}
+            decay={1.5}
+            color="#fff7ed"
+            castShadow={shadowsEnabled}
         />
       )}
 
       {/* Main Terrain Mesh */}
-      <mesh ref={terrainRef} receiveShadow castShadow geometry={geometry}>
-        <meshStandardMaterial 
-            vertexColors 
-            flatShading 
-            roughness={0.8} 
-            metalness={0.05}
-            side={THREE.DoubleSide}
-        />
+      <mesh ref={terrainRef} receiveShadow={shadowsEnabled} castShadow={shadowsEnabled} geometry={geometry}>
+        {terrainMaterial}
       </mesh>
       
       {/* Instanced Objects (Trees, Rocks) */}
-      <TerrainObjects data={pines} type="pine" showHitboxes={showHitboxes} season={season} />
-      <TerrainObjects data={broadleafs} type="broadleaf" showHitboxes={showHitboxes} season={season} />
-      <TerrainObjects data={rocks} type="rock" showHitboxes={showHitboxes} season={season} />
+      <TerrainObjects data={pines} type="pine" showHitboxes={showHitboxes} season={season} shadowsEnabled={shadowsEnabled} />
+      <TerrainObjects data={broadleafs} type="broadleaf" showHitboxes={showHitboxes} season={season} shadowsEnabled={shadowsEnabled} />
+      <TerrainObjects data={rocks} type="rock" showHitboxes={showHitboxes} season={season} shadowsEnabled={shadowsEnabled} />
 
       {/* Special Hitbox Layers (Water & Peaks) */}
       <HitboxLayer 
@@ -460,7 +503,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
 
 
       {/* Water Plane */}
-       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
+       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]} receiveShadow={shadowsEnabled}>
         <planeGeometry args={[size * 1.5, size * 1.5]} />
         <meshStandardMaterial 
           color={season === 'winter' ? '#94a3b8' : '#3b82f6'} 
