@@ -12,6 +12,8 @@ export interface WorldConfig {
   lakeThreshold: number;
   showHitboxes: boolean;
   showNavMesh: boolean;
+  showLandNavMesh: boolean;
+  showWaterNavMesh: boolean;
   dayNightSpeed: number;
   flashlightEnabled: boolean;
   flashlightIntensity: number;

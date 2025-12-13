@@ -137,7 +137,7 @@ export const generateTerrain = (
 
   const segmentSize = size / effectiveResolution;
   const halfSize = size / 2;
-  const WATER_LEVEL = waterLevel;
+  const SEA_LEVEL = waterLevel;
 
   const peakThreshold = 60 * effectiveRelief;
 
@@ -185,8 +185,8 @@ export const generateTerrain = (
               const digDepth = (1.0 - bank) * 15;
               y -= digDepth;
               
-              if (y < WATER_LEVEL - 2) {
-                  y = WATER_LEVEL - 5 + fbm(nx*5, nz*5, 2, 0.5, 2) * 2;
+              if (y < SEA_LEVEL - 2) {
+                  y = SEA_LEVEL - 5 + fbm(nx*5, nz*5, 2, 0.5, 2) * 2;
               }
           }
       }
@@ -198,7 +198,7 @@ export const generateTerrain = (
       const isWet = moisture > (1.0 - effectiveLakeThreshold * 1.5);
 
       if (isLowLand && isWet) {
-          y = THREE.MathUtils.lerp(y, WATER_LEVEL - 5, 0.8);
+          y = THREE.MathUtils.lerp(y, SEA_LEVEL - 5, 0.8);
       }
 
       if (y < -20) y = -20;
@@ -212,11 +212,11 @@ export const generateTerrain = (
       // --- Special Hitboxes ---
 
       // Water Hitbox: Identify underwater terrain
-      const isWater = y <= WATER_LEVEL;
+      const isWater = y <= SEA_LEVEL;
       if (isWater) {
           waterInstances.push({
               x: realX,
-              y: WATER_LEVEL + 0.2, // Float slightly above water surface
+              y: SEA_LEVEL + 0.2, // Float slightly above water surface
               z: realZ,
               scale: 1,
               id: `w-${index}`
@@ -236,14 +236,14 @@ export const generateTerrain = (
           });
       }
 
-      const navHeight = Math.max(y, WATER_LEVEL);
+      const navHeight = Math.max(y, SEA_LEVEL);
 
       navGrid[index] = {
           x: realX,
           z: realZ,
           height: navHeight,
           slope: 0,
-          type: navHeight <= WATER_LEVEL ? 'water' : 'land',
+          type: navHeight <= SEA_LEVEL ? 'water' : 'land',
           walkable: false,
           flags: { isWater, isPeak },
       };
@@ -259,10 +259,10 @@ export const generateTerrain = (
       const snowThreshold = season === 'winter' ? 15 * effectiveRelief : 65 * effectiveRelief;
       const grassThreshold = season === 'winter' ? 5 : 25 * effectiveRelief;
 
-      if (height < WATER_LEVEL) {
-          if (height < WATER_LEVEL - 8) color = COLORS.DEEP_WATER;
+      if (height < SEA_LEVEL) {
+          if (height < SEA_LEVEL - 8) color = COLORS.DEEP_WATER;
           else color = COLORS.WATER;
-      } else if (height < WATER_LEVEL + 3) {
+      } else if (height < SEA_LEVEL + 3) {
           color = COLORS.SAND;
       } else if (height < grassThreshold) {
            if (fbm(nx*5, nz*5, 2, 0.5, 2) > 0.2) color = COLORS.DARK_GRASS;
@@ -279,7 +279,7 @@ export const generateTerrain = (
       colors[index * 3 + 2] = color.b;
 
       // --- F. Object Scattering ---
-      if (height > WATER_LEVEL + 1.5) {
+      if (height > SEA_LEVEL + 1.5) {
           
           if (color === COLORS.GRASS || color === COLORS.DARK_GRASS || (season === 'winter' && height < snowThreshold)) {
               if (moisture > 0 && Math.random() < forestDensity) {
