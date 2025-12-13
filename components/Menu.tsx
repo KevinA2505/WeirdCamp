@@ -45,24 +45,35 @@ export const Menu: React.FC<MenuProps> = ({ config, updateConfig, onStart }) => 
     step: number,
     helper?: string,
     formatter?: (val: number) => string
-  ) => (
-    <div className="space-y-2">
-      <div className="flex justify-between text-sm text-gray-300">
-        <span>{label}</span>
-        <span className="text-blue-200 font-semibold">{formatter ? formatter(value) : value}</span>
+  ) => {
+    const sliderId = `slider-${key}`;
+    const helperId = helper ? `${sliderId}-helper` : undefined;
+
+    return (
+      <div className="space-y-2">
+        <div className="flex justify-between text-sm text-gray-300">
+          <label htmlFor={sliderId}>{label}</label>
+          <span className="text-blue-200 font-semibold">{formatter ? formatter(value) : value}</span>
+        </div>
+        <input
+          id={sliderId}
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          aria-describedby={helperId}
+          onChange={(e) => updateConfig(key, Number(e.target.value))}
+          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+        />
+        {helper && (
+          <p id={helperId} className="text-[10px] text-gray-500">
+            {helper}
+          </p>
+        )}
       </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => updateConfig(key, Number(e.target.value))}
-        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-      />
-      {helper && <p className="text-[10px] text-gray-500">{helper}</p>}
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="flex h-screen w-screen bg-gray-900 text-white items-center justify-center relative overflow-hidden">
