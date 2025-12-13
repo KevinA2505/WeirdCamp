@@ -1,13 +1,14 @@
 import React, { useMemo, useRef, useState, useLayoutEffect, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { WorldConfig, ObjectInstance, NavigationCell, BoatInstance } from '../types';
+import { WorldConfig, ObjectInstance, NavigationCell, BoatInstance, AgentState } from '../types';
 import { generateTerrain } from '../utils/noise';
 import { TerrainObjects } from './TerrainObjects';
 import { Billboard, Sky, Stars } from '@react-three/drei';
 import { HumanAgent, HumanRuntime } from './HumanAgent';
 import {
   buildMultimodalPath,
+  buildLandPath,
   createNavContext,
   findNearestBoat,
   findNearestWalkable,
@@ -22,7 +23,7 @@ export interface WorldHandle {
   spawnHuman: () => void;
 }
 
-type AgentState = HumanRuntime & {
+type AgentRecord = HumanRuntime & {
   path: number[];
   waypoint: number;
   targetIndex: number | null;
@@ -32,6 +33,13 @@ type AgentState = HumanRuntime & {
   pauseTimer: number;
   nextPauseAt: number;
   nextGazeShift: number;
+  state: AgentState;
+  boatId: string | null;
+  boatWaypointStart: number | null;
+  boatWaypointEnd: number | null;
+  mountProgress: number;
+  waitingUntil: number;
+  dismountTarget: THREE.Vector3 | null;
 };
 
 interface WeatherState {
@@ -159,13 +167,17 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
   const [time, setTime] = useState(0);
   const [starVisibility, setStarVisibility] = useState(1);
   const fireflyVisibility = sunPosition.y < 0 ? starVisibility : 0;
+  const BOAT_PROXIMITY_RADIUS = 12;
+  const MOUNT_DURATION = 1.2;
+  const DISMOUNT_DURATION = 0.9;
+  const WAIT_RETRY_MS = 2500;
 
   // Weather State
   const [weather, setWeather] = useState<WeatherState>({
     type: 'clear',
     intensity: 0,
   });
-  const humansRef = useRef<Map<string, AgentState>>(new Map());
+  const humansRef = useRef<Map<string, AgentRecord>>(new Map());
   const [humanIds, setHumanIds] = useState<string[]>([]);
   const HUMAN_SCALE = 0.9;
   const HUMAN_HEIGHT = 2.2 * HUMAN_SCALE;
@@ -241,9 +253,18 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
     );
   }, [size, resolution, seed, waterLevel, forestDensity, rockDensity, reliefScale, riverWidth, lakeThreshold, season, landBias]);
 
+  const [boatStates, setBoatStates] = useState<BoatInstance[]>(() => boats.map((boat) => ({ ...boat })));
+  const boatOccupants = useRef<Map<string, string | null>>(new Map());
+
+  useEffect(() => {
+    const next = new Map<string, string | null>();
+    boatStates.forEach((boat) => next.set(boat.id, boatOccupants.current.get(boat.id) ?? null));
+    boatOccupants.current = next;
+  }, [boatStates]);
+
   const navContext = useMemo(
-    () => createNavContext(navGrid, navResolution, segmentSize, size, boats),
-    [boats, navGrid, navResolution, segmentSize, size]
+    () => createNavContext(navGrid, navResolution, segmentSize, size, boatStates),
+    [boatStates, navGrid, navResolution, segmentSize, size]
   );
 
   const getGroundedHeight = useCallback(
@@ -254,13 +275,13 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
   useEffect(() => {
     humansRef.current.clear();
     setHumanIds([]);
-  }, [navContext]);
+  }, [navGrid]);
 
   const randomPauseDuration = useCallback(() => 1800 + Math.random() * 2200, []);
   const randomPauseInterval = useCallback(() => 4500 + Math.random() * 7000, []);
 
   const assignNewDestination = useCallback(
-    (agent: AgentState) => {
+    (agent: AgentRecord, preferLand = false) => {
       if (!navContext.grid.length) return;
       const startIndex = findNearestWalkable(agent.position, navContext);
       if (startIndex == null) return;
@@ -271,7 +292,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       if (destination == null) return;
 
       const boatNearby = findNearestBoat(agent.position, navContext);
-      const path = buildMultimodalPath(startIndex, destination, navContext);
+      const path = preferLand ? buildLandPath(startIndex, destination, navContext) : buildMultimodalPath(startIndex, destination, navContext);
       if (path.length < 2) return;
 
       agent.path = path;
@@ -285,6 +306,14 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       agent.pauseTimer = 0;
       agent.nextPauseAt = performance.now() + randomPauseInterval();
       agent.nextGazeShift = 0;
+      if (agent.boatId) boatOccupants.current.set(agent.boatId, null);
+      agent.state = AgentState.Walking;
+      agent.boatId = null;
+      agent.boatWaypointStart = null;
+      agent.boatWaypointEnd = null;
+      agent.mountProgress = 0;
+      agent.waitingUntil = 0;
+      agent.dismountTarget = null;
 
       const nextCell = navContext.grid[path[1]];
       if (nextCell) {
@@ -302,7 +331,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       const id = `human-${Math.random().toString(16).slice(2, 8)}`;
       const position = new THREE.Vector3(cell.x, getGroundedHeight(cell.height), cell.z);
 
-      const agent: AgentState = {
+      const agent: AgentRecord = {
         id,
         position,
         heading: 0,
@@ -319,6 +348,13 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
         pauseTimer: 0,
         nextPauseAt: performance.now() + randomPauseInterval(),
         nextGazeShift: 0,
+        state: AgentState.Walking,
+        boatId: null,
+        boatWaypointStart: null,
+        boatWaypointEnd: null,
+        mountProgress: 0,
+        waitingUntil: 0,
+        dismountTarget: null,
       };
 
       humansRef.current.set(id, agent);
@@ -686,12 +722,28 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       positionsAttr.needsUpdate = true;
     }
 
-    // 5. Autonomous humanoids navigating land navmesh
+    // 5. Autonomous humanoids navigating land navmesh and boats
     if (navContext.grid.length && humansRef.current.size) {
+      const boatUpdates = new Map<string, BoatInstance>();
+
       humansRef.current.forEach((agent) => {
         const now = performance.now();
+        const currentIndex = worldToCellIndex(agent.position, navContext);
 
-        if (agent.pauseTimer <= 0 && now >= agent.nextPauseAt) {
+        if (!agent.path.length || agent.waypoint >= agent.path.length) {
+          assignNewDestination(agent);
+          return;
+        }
+
+        if (agent.state === AgentState.Waiting) {
+          if (now >= agent.waitingUntil) {
+            assignNewDestination(agent, true);
+            agent.state = AgentState.Walking;
+          }
+          return;
+        }
+
+        if (agent.state === AgentState.Walking && agent.pauseTimer <= 0 && now >= agent.nextPauseAt) {
           agent.pauseTimer = randomPauseDuration();
           agent.nextPauseAt = now + agent.pauseTimer + randomPauseInterval();
           agent.nextGazeShift = now;
@@ -699,11 +751,11 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
           agent.lastProgressCheck = now;
         }
 
-        if (agent.pauseTimer > 0) {
+        if (agent.state === AgentState.Walking && agent.pauseTimer > 0) {
           agent.pauseTimer = Math.max(0, agent.pauseTimer - delta * 1000);
 
           if (agent.pauseTimer > 0 && now >= agent.nextGazeShift) {
-            const gazeIndex = findRandomWalkable(navContext, worldToCellIndex(agent.position, navContext), 6);
+            const gazeIndex = findRandomWalkable(navContext, currentIndex, 6);
             if (gazeIndex != null) {
               const gazeCell = navContext.grid[gazeIndex];
               agent.heading = Math.atan2(gazeCell.x - agent.position.x, gazeCell.z - agent.position.z);
@@ -717,14 +769,8 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
           return;
         }
 
-        if (!agent.path.length || agent.waypoint >= agent.path.length) {
-          assignNewDestination(agent);
-          return;
-        }
-
-        const currentIndex = worldToCellIndex(agent.position, navContext);
         const currentCell = navContext.grid[currentIndex];
-        if (!currentCell.walkable || currentCell.type !== 'land') {
+        if (agent.state !== AgentState.Sailing && (!currentCell.walkable || currentCell.type !== 'land')) {
           const safeIndex = findNearestWalkable(agent.position, navContext);
           if (safeIndex != null) {
             const safeCell = navContext.grid[safeIndex];
@@ -738,6 +784,154 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
         if (!targetCell || !targetCell.walkable) {
           assignNewDestination(agent);
           return;
+        }
+
+        if (targetCell.type === 'water' && agent.state === AgentState.Walking) {
+          let waterEnd = agent.waypoint;
+          while (
+            waterEnd + 1 < agent.path.length &&
+            navContext.grid[agent.path[waterEnd + 1]]?.type === 'water'
+          ) {
+            waterEnd += 1;
+          }
+
+          agent.boatWaypointStart = agent.waypoint;
+          agent.boatWaypointEnd = waterEnd;
+          const boatCandidate = findNearestBoat(agent.position, navContext, BOAT_PROXIMITY_RADIUS);
+
+          if (boatCandidate && !boatOccupants.current.get(boatCandidate.instance.id)) {
+            agent.boatId = boatCandidate.instance.id;
+            boatOccupants.current.set(boatCandidate.instance.id, agent.id);
+            const shoreIndex = findNearestWalkable(
+              new THREE.Vector3(boatCandidate.instance.x, boatCandidate.instance.y, boatCandidate.instance.z),
+              navContext
+            );
+
+            if (shoreIndex != null) {
+              const toBoat = buildLandPath(currentIndex, shoreIndex, navContext);
+              if (toBoat.length > 1) {
+                agent.path = toBoat;
+                agent.waypoint = 1;
+                agent.state = AgentState.SeekingBoat;
+                return;
+              }
+            }
+
+            boatOccupants.current.set(boatCandidate.instance.id, null);
+            agent.boatId = null;
+            agent.waitingUntil = now + WAIT_RETRY_MS;
+            agent.state = AgentState.Waiting;
+            return;
+          }
+
+          assignNewDestination(agent, true);
+          agent.state = AgentState.Waiting;
+          agent.waitingUntil = now + WAIT_RETRY_MS;
+          return;
+        }
+
+        if (agent.state === AgentState.Mounting) {
+          agent.mountProgress = Math.min(1, agent.mountProgress + delta / MOUNT_DURATION);
+          const boat = boatStates.find((b) => b.id === agent.boatId);
+          if (boat) {
+            const boatPos = new THREE.Vector3(boat.x, boat.y + 0.2, boat.z);
+            agent.position.lerp(boatPos, 0.18);
+            agent.heading = boat.rotation;
+          }
+
+          if (agent.mountProgress >= 1) {
+            const boat = boatStates.find((b) => b.id === agent.boatId);
+            agent.state = AgentState.Sailing;
+            agent.mode = boat && boat.mass > 40 ? 'motor' : 'rowing';
+            agent.waypoint = agent.boatWaypointStart ?? agent.waypoint;
+            agent.mountProgress = 0;
+          }
+          return;
+        }
+
+        if (agent.state === AgentState.Sailing) {
+          const boat = boatStates.find((b) => b.id === agent.boatId);
+          if (!boat) {
+            if (agent.boatId) boatOccupants.current.set(agent.boatId, null);
+            agent.state = AgentState.Waiting;
+            agent.waitingUntil = now + WAIT_RETRY_MS;
+            return;
+          }
+
+          const waterTarget = navContext.grid[agent.path[agent.waypoint]];
+          if (!waterTarget) {
+            assignNewDestination(agent);
+            return;
+          }
+
+          const boatPos = new THREE.Vector3(boat.x, boat.y, boat.z);
+          const targetPosition = new THREE.Vector3(waterTarget.x, Math.max(waterTarget.height, seaLevel), waterTarget.z);
+          const direction = targetPosition.clone().sub(boatPos);
+          const distance = direction.length();
+
+          if (distance < 0.5) {
+            agent.waypoint += 1;
+            if (agent.boatWaypointEnd != null && agent.waypoint > agent.boatWaypointEnd) {
+              const landIndex = agent.path[agent.boatWaypointEnd + 1];
+              const landCell = navContext.grid[landIndex];
+              agent.dismountTarget = landCell
+                ? new THREE.Vector3(landCell.x, getGroundedHeight(landCell.height), landCell.z)
+                : null;
+              agent.state = AgentState.Dismounting;
+              agent.mountProgress = 0;
+            }
+            return;
+          }
+
+          direction.normalize();
+          const boatSpeed = agent.mode === 'motor' ? 10 : 6;
+          const step = Math.min(distance, boatSpeed * delta);
+          const heading = Math.atan2(direction.x, direction.z);
+          const updatedBoat: BoatInstance = { ...boat, x: boat.x + direction.x * step, z: boat.z + direction.z * step, rotation: heading };
+          boatUpdates.set(updatedBoat.id, updatedBoat);
+          agent.position.set(updatedBoat.x, updatedBoat.y, updatedBoat.z);
+          agent.heading = heading;
+          agent.distanceSinceProgress += step;
+          return;
+        }
+
+        if (agent.state === AgentState.Dismounting) {
+          agent.mountProgress = Math.min(1, agent.mountProgress + delta / DISMOUNT_DURATION);
+          if (agent.dismountTarget) {
+            agent.position.lerp(agent.dismountTarget, 0.16);
+            agent.heading = Math.atan2(
+              agent.dismountTarget.x - agent.position.x,
+              agent.dismountTarget.z - agent.position.z
+            );
+          }
+
+          if (agent.mountProgress >= 1) {
+            if (agent.boatId) boatOccupants.current.set(agent.boatId, null);
+            if (agent.boatWaypointEnd != null) {
+              agent.waypoint = agent.boatWaypointEnd + 1;
+            }
+            agent.state = AgentState.Walking;
+            agent.mode = 'walking';
+            agent.boatId = null;
+            agent.boatWaypointStart = null;
+            agent.boatWaypointEnd = null;
+            agent.mountProgress = 0;
+            agent.dismountTarget = null;
+            agent.waitingUntil = 0;
+          }
+          return;
+        }
+
+        if (agent.state === AgentState.SeekingBoat) {
+          const boat = agent.boatId ? boatStates.find((b) => b.id === agent.boatId) : null;
+          const boatPosition = boat ? new THREE.Vector3(boat.x, boat.y, boat.z) : null;
+          const proximity = boatPosition ? boatPosition.distanceTo(agent.position) : Infinity;
+
+          if (proximity < 1.2) {
+            agent.state = AgentState.Mounting;
+            agent.mountProgress = 0;
+            return;
+          }
         }
 
         const targetPosition = new THREE.Vector3(targetCell.x, getGroundedHeight(targetCell.height), targetCell.z);
@@ -766,6 +960,10 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
           agent.lastProgressCheck = now;
         }
       });
+
+      if (boatUpdates.size) {
+        setBoatStates((prev) => prev.map((boat) => boatUpdates.get(boat.id) ?? boat));
+      }
     }
   });
 
@@ -984,7 +1182,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       <TerrainObjects data={pines} type="pine" showHitboxes={showHitboxes} season={season} />
       <TerrainObjects data={broadleafs} type="broadleaf" showHitboxes={showHitboxes} season={season} />
       <TerrainObjects data={rocks} type="rock" showHitboxes={showHitboxes} season={season} />
-      <BoatFleet boats={boats} showHitboxes={showHitboxes} />
+          <BoatFleet boats={boatStates} showHitboxes={showHitboxes} />
 
       {/* Special Hitbox Layers (Water & Peaks) */}
       <HitboxLayer

@@ -408,6 +408,12 @@ export const buildPath = (
   context: GridContext
 ): number[] => buildMultimodalPath(startIndex, goalIndex, context);
 
+export const buildLandPath = (
+  startIndex: number,
+  goalIndex: number,
+  context: GridContext
+): number[] => buildAStar(startIndex, goalIndex, context, 'land').path;
+
 export const createNavContext = (
   grid: NavigationCell[],
   resolution: number,
