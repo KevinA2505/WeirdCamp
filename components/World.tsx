@@ -12,12 +12,6 @@ type WeatherType = 'clear' | 'rain' | 'snow';
 const WATER_LEVEL = 0;
 const CLOUD_MULTIPLIER = 1.15;
 
-interface WeatherState {
-  type: WeatherType;
-  intensity: number;
-  clouds: CloudInstance[];
-}
-
 interface CloudInstance {
   position: [number, number, number];
   scale: number;
@@ -86,10 +80,9 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   const [starVisibility, setStarVisibility] = useState(1);
 
   // Weather State
-  const [weather, setWeather] = useState<WeatherState>({
+  const [weather, setWeather] = useState<{ type: WeatherType; intensity: number }>({
     type: 'clear',
     intensity: 0,
-    clouds: [],
   });
   const weatherTimer = useRef(0);
   useLayoutEffect(() => {
@@ -99,10 +92,9 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   useEffect(() => {
     if (rainEnabled) {
       const forcedType: WeatherType = season === 'winter' ? 'snow' : 'rain';
-      setWeather((prev) => ({
+      setWeather(() => ({
         type: forcedType,
-        intensity: Math.max(prev.intensity, 0.6),
-        clouds: createClouds(adjustedCloudCount(14)),
+        intensity: 0.25,
       }));
       return;
     }
@@ -235,13 +227,14 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       scale: 8 + Math.random() * 12,
     }));
 
+  const persistentClouds = useMemo(() => createClouds(adjustedCloudCount(10)), [size]);
+
   const rollWeather = () => {
     const chance = Math.random();
     const shouldPrecipitate = chance > 0.8;
     const type: WeatherType = shouldPrecipitate ? (season === 'winter' ? 'snow' : 'rain') : 'clear';
-    const intensity = shouldPrecipitate ? 0.3 + Math.random() * 0.7 : 0;
-    const cloudCount = shouldPrecipitate ? adjustedCloudCount(14) : adjustedCloudCount(7);
-    setWeather({ type, intensity, clouds: createClouds(cloudCount) });
+    const intensity = shouldPrecipitate ? 0.15 + Math.random() * 0.2 : 0;
+    setWeather({ type, intensity });
   };
 
   // Frame Loop for Cycle and Interactions
@@ -363,7 +356,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   });
 
   const Precipitation: React.FC<{ type: WeatherType; intensity: number; area: number }> = ({ type, intensity, area }) => {
-    const count = Math.max(0, Math.floor(1200 * intensity));
+    const count = Math.max(0, Math.floor(400 * intensity));
     const positions = useMemo(() => {
       const arr = new Float32Array(count * 3);
       for (let i = 0; i < count; i++) {
@@ -406,9 +399,9 @@ export const World: React.FC<WorldProps> = ({ config }) => {
         </bufferGeometry>
         <pointsMaterial
           color={type === 'snow' ? '#e2e8f0' : '#60a5fa'}
-          size={type === 'snow' ? 0.35 : 0.2}
+          size={type === 'snow' ? 0.35 : 0.22}
           transparent
-          opacity={0.6}
+          opacity={0.7}
           depthWrite={false}
           sizeAttenuation
         />
@@ -541,7 +534,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       />
 
       {/* Atmosphere */}
-      <CloudLayer clouds={weather.clouds} />
+      <CloudLayer clouds={persistentClouds} />
       {weather.type !== 'clear' && <Precipitation type={weather.type} intensity={weather.intensity} area={size} />}
 
 
