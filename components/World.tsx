@@ -22,6 +22,9 @@ type AgentState = HumanRuntime & {
   lastRepath: number;
   lastProgressCheck: number;
   distanceSinceProgress: number;
+  pauseTimer: number;
+  nextPauseAt: number;
+  nextGazeShift: number;
 };
 
 interface WeatherState {
@@ -193,6 +196,9 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
     setHumanIds([]);
   }, [navContext]);
 
+  const randomPauseDuration = useCallback(() => 1800 + Math.random() * 2200, []);
+  const randomPauseInterval = useCallback(() => 4500 + Math.random() * 7000, []);
+
   const assignNewDestination = useCallback(
     (agent: AgentState) => {
       if (!navContext.grid.length) return;
@@ -214,13 +220,16 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       agent.lastRepath = performance.now();
       agent.lastProgressCheck = performance.now();
       agent.distanceSinceProgress = 0;
+      agent.pauseTimer = 0;
+      agent.nextPauseAt = performance.now() + randomPauseInterval();
+      agent.nextGazeShift = 0;
 
       const nextCell = navContext.grid[path[1]];
       if (nextCell) {
         agent.heading = Math.atan2(nextCell.x - agent.position.x, nextCell.z - agent.position.z);
       }
     },
-    [navContext, navResolution, size]
+    [navContext, navResolution, randomPauseInterval, size]
   );
 
   const createAgent = useCallback(
@@ -245,13 +254,24 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
         lastRepath: performance.now(),
         lastProgressCheck: performance.now(),
         distanceSinceProgress: 0,
+        pauseTimer: 0,
+        nextPauseAt: performance.now() + randomPauseInterval(),
+        nextGazeShift: 0,
       };
 
       humansRef.current.set(id, agent);
       setHumanIds((prev) => [...prev, id]);
       assignNewDestination(agent);
     },
-    [HUMAN_COLORS, HUMAN_HEIGHT, HUMAN_RADIUS, assignNewDestination, getGroundedHeight, navContext]
+    [
+      HUMAN_COLORS,
+      HUMAN_HEIGHT,
+      HUMAN_RADIUS,
+      assignNewDestination,
+      getGroundedHeight,
+      navContext,
+      randomPauseInterval,
+    ]
   );
 
   const spawnHuman = useCallback(() => {
@@ -607,6 +627,34 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
     // 5. Autonomous humanoids navigating land navmesh
     if (navContext.grid.length && humansRef.current.size) {
       humansRef.current.forEach((agent) => {
+        const now = performance.now();
+
+        if (agent.pauseTimer <= 0 && now >= agent.nextPauseAt) {
+          agent.pauseTimer = randomPauseDuration();
+          agent.nextPauseAt = now + agent.pauseTimer + randomPauseInterval();
+          agent.nextGazeShift = now;
+          agent.distanceSinceProgress = 0;
+          agent.lastProgressCheck = now;
+        }
+
+        if (agent.pauseTimer > 0) {
+          agent.pauseTimer = Math.max(0, agent.pauseTimer - delta * 1000);
+
+          if (agent.pauseTimer > 0 && now >= agent.nextGazeShift) {
+            const gazeIndex = findRandomWalkable(navContext, worldToCellIndex(agent.position, navContext), 6);
+            if (gazeIndex != null) {
+              const gazeCell = navContext.grid[gazeIndex];
+              agent.heading = Math.atan2(gazeCell.x - agent.position.x, gazeCell.z - agent.position.z);
+            } else {
+              agent.heading = wrapTime(agent.heading + (Math.random() - 0.5));
+            }
+
+            agent.nextGazeShift = now + 400 + Math.random() * 700;
+          }
+
+          return;
+        }
+
         if (!agent.path.length || agent.waypoint >= agent.path.length) {
           assignNewDestination(agent);
           return;
@@ -648,7 +696,6 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
         agent.heading = Math.atan2(direction.x, direction.z);
 
         agent.distanceSinceProgress += step;
-        const now = performance.now();
         if (now - agent.lastProgressCheck > 1200) {
           if (agent.distanceSinceProgress < 0.5) {
             assignNewDestination(agent);
