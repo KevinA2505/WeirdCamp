@@ -26,22 +26,32 @@ export const HumanAgent: React.FC<HumanAgentProps> = ({ agentId, runtimeRef, sho
   const agentHeight = runtimeAgent?.height ?? 2.2;
   const agentRadius = runtimeAgent?.radius ?? 0.45;
   const baseColor = runtimeAgent?.color ?? '#fbbf24';
-  const bodyMaterial = useMemo(
+  const clothingMaterial = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
         color: baseColor,
-        roughness: 0.5,
-        metalness: 0.05,
+        roughness: 0.55,
+        metalness: 0.08,
       }),
     [baseColor]
+  );
+
+  const skinMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: '#f2c9a0',
+        roughness: 0.4,
+        metalness: 0.02,
+      }),
+    []
   );
 
   const accentMaterial = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: '#1e293b',
-        roughness: 0.7,
-        metalness: 0.1,
+        color: '#0f172a',
+        roughness: 0.65,
+        metalness: 0.12,
       }),
     []
   );
@@ -58,25 +68,53 @@ export const HumanAgent: React.FC<HumanAgentProps> = ({ agentId, runtimeRef, sho
   });
 
   const halfHeight = agentHeight / 2;
-  const torsoLength = Math.max(agentHeight - agentRadius * 2, agentRadius);
-  const headRadius = agentRadius * 0.84;
-  const headCenterY = halfHeight + agentHeight * 0.34;
-  const hatCenterY = halfHeight + agentHeight * 0.12;
+  const headRadius = agentRadius * 0.82;
+  const neckHeight = agentHeight * 0.04;
+  const torsoHeight = Math.max(agentHeight - headRadius * 2 - neckHeight, agentRadius * 2.6);
+  const torsoRadius = agentRadius * 0.92;
+  const torsoLength = Math.max(torsoHeight - torsoRadius * 2, torsoRadius * 0.6);
+  const headCenterY = torsoHeight + neckHeight + headRadius;
+  const hatCenterY = headCenterY - headRadius * 0.4;
+  const shoulderHeight = torsoHeight * 0.86;
+  const armLength = agentHeight * 0.48;
+  const armRadius = agentRadius * 0.26;
+  const armOffsetX = torsoRadius + armRadius * 1.4;
+  const armCenterY = Math.max(shoulderHeight - armLength / 2, armRadius);
   const hitboxRadius = agentRadius * 1.1;
   const hitboxLength = Math.max(agentHeight - hitboxRadius * 2, torsoLength);
 
   return (
     <group ref={groupRef}>
-      <mesh castShadow receiveShadow material={bodyMaterial} position={[0, halfHeight, 0]}>
-        <capsuleGeometry args={[agentRadius, torsoLength, 6, 12]} />
+      <mesh castShadow receiveShadow material={clothingMaterial} position={[0, torsoHeight / 2, 0]}>
+        <capsuleGeometry args={[torsoRadius, torsoLength, 6, 12]} />
       </mesh>
 
-      <mesh castShadow receiveShadow material={accentMaterial} position={[0, headCenterY, 0]}>
+      <mesh castShadow receiveShadow material={skinMaterial} position={[0, headCenterY, 0]}>
         <sphereGeometry args={[headRadius, 16, 16]} />
       </mesh>
 
       <mesh castShadow receiveShadow material={accentMaterial} position={[0, hatCenterY, 0]}>
-        <cylinderGeometry args={[agentRadius * 1.05, agentRadius * 1.15, agentHeight * 0.18, 12]} />
+        <cylinderGeometry args={[agentRadius * 1.05, agentRadius * 1.15, agentHeight * 0.15, 12]} />
+      </mesh>
+
+      <mesh
+        castShadow
+        receiveShadow
+        material={skinMaterial}
+        position={[armOffsetX, armCenterY, 0]}
+        rotation={[0, 0, Math.PI * 0.01]}
+      >
+        <capsuleGeometry args={[armRadius, Math.max(armLength - armRadius * 2, armRadius * 0.8), 6, 10]} />
+      </mesh>
+
+      <mesh
+        castShadow
+        receiveShadow
+        material={skinMaterial}
+        position={[-armOffsetX, armCenterY, 0]}
+        rotation={[0, 0, -Math.PI * 0.01]}
+      >
+        <capsuleGeometry args={[armRadius, Math.max(armLength - armRadius * 2, armRadius * 0.8), 6, 10]} />
       </mesh>
 
       {showHitboxes && (
