@@ -104,6 +104,22 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu
           </button>
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-gray-400">
+              <label>Intensidad de Lluvia</label>
+              <span className="text-sky-300">{(config.rainIntensity * 1.2).toFixed(1)}x</span>
+            </div>
+            <input
+              type="range"
+              min="0.2"
+              max="2.0"
+              step="0.1"
+              value={config.rainIntensity}
+              onChange={(e) => updateConfig('rainIntensity', Number(e.target.value))}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
+            />
+            <p className="text-[10px] text-gray-500">La intensidad base de la lluvia aumenta automáticamente un 20%.</p>
+          </div>
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-gray-400">
               <label>Tierra/Agua</label>
             </div>
             <input

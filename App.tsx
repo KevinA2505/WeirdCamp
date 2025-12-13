@@ -24,6 +24,7 @@ const App = () => {
     season: 'spring',
     landBias: 0.2,
     rainEnabled: false,
+    rainIntensity: 1.0,
   });
 
   const handleRegenerate = () => {

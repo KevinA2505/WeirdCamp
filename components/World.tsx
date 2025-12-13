@@ -11,6 +11,7 @@ type WeatherType = 'clear' | 'rain' | 'snow';
 
 const WATER_LEVEL = 0;
 const CLOUD_MULTIPLIER = 1.15;
+const RAIN_BASE_MULTIPLIER = 1.2;
 
 interface CloudInstance {
   position: [number, number, number];
@@ -67,7 +68,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     size, resolution, seed, waterLevel, forestDensity,
     rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes,
     dayNightSpeed, flashlightEnabled, flashlightIntensity,
-    season, landBias, rainEnabled
+    season, landBias, rainEnabled, rainIntensity
   } = config;
 
   // Day/Night State
@@ -94,13 +95,24 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       const forcedType: WeatherType = season === 'winter' ? 'snow' : 'rain';
       setWeather(() => ({
         type: forcedType,
-        intensity: 0.25,
+        intensity: applyRainIntensity(0.25),
       }));
       return;
     }
 
     rollWeather();
-  }, [rainEnabled, season]);
+  }, [rainEnabled, season, rainMultiplier]);
+
+  useEffect(() => {
+    const previousMultiplier = previousRainMultiplier.current;
+    previousRainMultiplier.current = rainMultiplier;
+
+    setWeather((prev) => {
+      if (prev.type === 'clear') return prev;
+      const baseIntensity = previousMultiplier > 0 ? prev.intensity / previousMultiplier : prev.intensity;
+      return { ...prev, intensity: applyRainIntensity(baseIntensity) };
+    });
+  }, [rainMultiplier]);
 
   const starsRef = useRef<THREE.Points>(null);
   useLayoutEffect(() => {
@@ -115,6 +127,11 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   const [fogColor, setFogColor] = useState(new THREE.Color('#ffffff'));
   const [fogNear, setFogNear] = useState(10);
   const [fogFar, setFogFar] = useState(200);
+
+  const rainMultiplier = useMemo(() => rainIntensity * RAIN_BASE_MULTIPLIER, [rainIntensity]);
+  const previousRainMultiplier = useRef(rainMultiplier);
+
+  const applyRainIntensity = (base: number) => base * rainMultiplier;
 
   // References
   const lightRef = useRef<THREE.PointLight>(null);
@@ -234,7 +251,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     const shouldPrecipitate = chance > 0.8;
     const type: WeatherType = shouldPrecipitate ? (season === 'winter' ? 'snow' : 'rain') : 'clear';
     const intensity = shouldPrecipitate ? 0.15 + Math.random() * 0.2 : 0;
-    setWeather({ type, intensity });
+    setWeather({ type, intensity: applyRainIntensity(intensity) });
   };
 
   // Frame Loop for Cycle and Interactions
