@@ -18,7 +18,7 @@ export const SimulationView: React.FC<SimulationViewProps> = ({ config, onBackTo
       <ControlPanel config={config} onBackToMenu={onBackToMenu} onRegenerate={onRegenerate} updateConfig={updateConfig} />
 
       <main className="flex-1 relative bg-black">
-        <Canvas shadows camera={{ position: [50, 50, 50], fov: 45 }}>
+        <Canvas shadows camera={{ position: [50, 50, 50], fov: 45, far: config.size * 1.2 }}>
           <Suspense fallback={null}>
             <World config={config} />
             <OrbitControls
