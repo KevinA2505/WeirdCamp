@@ -1,10 +1,16 @@
-import React, { Suspense, useRef, useState } from 'react';
+import React, { Suspense, useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { WorldConfig } from '../types';
 import { World, WorldHandle } from './World';
 import { ControlPanel } from './ControlPanel';
 import { MiniMap } from './MiniMap';
+interface BoatOverlay {
+  id: string;
+  x: number;
+  z: number;
+  status: 'idle' | 'reserved' | 'occupied';
+}
 
 interface SimulationViewProps {
   config: WorldConfig;
@@ -15,7 +21,10 @@ interface SimulationViewProps {
 
 export const SimulationView: React.FC<SimulationViewProps> = ({ config, onBackToMenu, onRegenerate, updateConfig }) => {
   const [showMiniMap, setShowMiniMap] = useState(true);
+  const [boatOverlay, setBoatOverlay] = useState<BoatOverlay[]>([]);
   const worldRef = useRef<WorldHandle>(null);
+
+  const overlayBoats = useMemo(() => (config.showBoatMarkers ? boatOverlay : []), [boatOverlay, config.showBoatMarkers]);
 
   return (
     <div className="flex h-screen w-screen bg-gray-900 text-white overflow-hidden">
@@ -30,6 +39,21 @@ export const SimulationView: React.FC<SimulationViewProps> = ({ config, onBackTo
             {showMiniMap ? 'Ocultar MiniMapa' : 'Mostrar MiniMapa'}
           </button>
 
+          <div className="flex gap-2">
+            <button
+              onClick={() => updateConfig('showWaterNavMesh', !config.showWaterNavMesh)}
+              className="px-3 py-1.5 text-xs bg-indigo-700/80 hover:bg-indigo-600 rounded border border-white/10 transition"
+            >
+              {config.showWaterNavMesh ? 'Ocultar capa acuática' : 'Ver malla acuática'}
+            </button>
+            <button
+              onClick={() => updateConfig('showRouteDebug', !config.showRouteDebug)}
+              className="px-3 py-1.5 text-xs bg-amber-700/80 hover:bg-amber-600 rounded border border-white/10 transition"
+            >
+              {config.showRouteDebug ? 'Ocultar rutas debug' : 'Ver rutas debug'}
+            </button>
+          </div>
+
           <button
             onClick={() => worldRef.current?.spawnHuman()}
             className="px-3 py-1.5 text-xs bg-emerald-600/90 hover:bg-emerald-500 text-white rounded border border-emerald-300/40 shadow"
@@ -37,12 +61,12 @@ export const SimulationView: React.FC<SimulationViewProps> = ({ config, onBackTo
             Generar humano en malla roja
           </button>
 
-          <MiniMap config={config} showOverlay={showMiniMap} />
+          <MiniMap config={config} boats={overlayBoats} showOverlay={showMiniMap} />
         </div>
 
         <Canvas shadows camera={{ position: [50, 50, 50], fov: 45 }}>
           <Suspense fallback={null}>
-            <World ref={worldRef} config={config} />
+            <World ref={worldRef} config={config} onBoatOverlayUpdate={setBoatOverlay} />
             <OrbitControls
               enableDamping
               dampingFactor={0.1}

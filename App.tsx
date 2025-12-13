@@ -21,6 +21,8 @@ const App = () => {
     showNavMesh: false,
     showLandNavMesh: true,
     showWaterNavMesh: true,
+    showBoatMarkers: true,
+    showRouteDebug: false,
     dayNightSpeed: 0.8,
     flashlightEnabled: false,
     flashlightIntensity: 1500,

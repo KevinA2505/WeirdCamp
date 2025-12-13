@@ -52,8 +52,25 @@ interface CloudInstance {
   scale: number;
 }
 
+type BoatMarker = {
+  id: string;
+  x: number;
+  z: number;
+  status: 'idle' | 'reserved' | 'occupied';
+};
+
+type DebugEventType = 'mount' | 'sail' | 'dismount' | 'route-fail';
+
+interface DebugEvent {
+  id: string;
+  type: DebugEventType;
+  message: string;
+  timestamp: number;
+}
+
 interface WorldProps {
   config: WorldConfig;
+  onBoatOverlayUpdate?: (boats: BoatMarker[]) => void;
 }
 
 // Sub-component for efficient rendering of thousands of hitboxes
@@ -150,7 +167,7 @@ const BoatFleet: React.FC<{ boats: BoatInstance[]; showHitboxes: boolean }> = ({
   );
 };
 
-export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
+export const World = forwardRef<WorldHandle, WorldProps>(({ config, onBoatOverlayUpdate }, ref) => {
   const {
     size, resolution, seed, waterLevel, forestDensity,
     rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes, showNavMesh, showLandNavMesh, showWaterNavMesh,
@@ -194,6 +211,8 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
   const rainSpawnTimer = useRef(0);
   const fireflyRef = useRef<THREE.Points>(null);
   const [usageRefresh, setUsageRefresh] = useState(0);
+  const [debugEvents, setDebugEvents] = useState<DebugEvent[]>([]);
+  const [pathDebugVersion, setPathDebugVersion] = useState(0);
   useEffect(() => {
     const targetType: WeatherType = config.rainEnabled ? (season === 'winter' ? 'snow' : 'rain') : 'clear';
     const targetIntensity = config.rainEnabled ? config.rainIntensity : 0;
@@ -279,6 +298,84 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       })),
     [boatStates, reservationVersion, usageRefresh]
   );
+
+  const boatMarkers = useMemo<BoatMarker[]>(
+    () =>
+      boatStates.map((boat) => {
+        const usage = boatUsage.find((entry) => entry.id === boat.id);
+        const status: BoatMarker['status'] = boat.occupiedBy
+          ? 'occupied'
+          : usage?.reservedBy
+            ? 'reserved'
+            : 'idle';
+        return { id: boat.id, x: boat.x, z: boat.z, status };
+      }),
+    [boatStates, boatUsage]
+  );
+
+  useEffect(() => {
+    onBoatOverlayUpdate?.(boatMarkers);
+  }, [boatMarkers, onBoatOverlayUpdate]);
+
+  const pathDebugSegments = useMemo(() => {
+    if (!config.showRouteDebug) return [] as { key: string; points: THREE.Vector3[]; color: string }[];
+
+    const segments: { key: string; points: THREE.Vector3[]; color: string }[] = [];
+    const colorMap: Record<'land' | 'water' | 'boat', string> = {
+      land: '#22c55e',
+      water: '#38bdf8',
+      boat: '#f59e0b',
+    };
+
+    humansRef.current.forEach((agent) => {
+      if (!agent.path || agent.path.length < 2) return;
+
+      const boatStart = agent.boatWaypointStart ?? null;
+      const boatEnd = agent.boatWaypointEnd ?? null;
+
+      let currentType: 'land' | 'water' | 'boat' | null = null;
+      let bucket: THREE.Vector3[] = [];
+
+      const flush = () => {
+        if (bucket.length >= 2 && currentType) {
+          segments.push({
+            key: `${agent.id}-${segments.length}`,
+            points: bucket,
+            color: colorMap[currentType],
+          });
+        }
+        bucket = [];
+      };
+
+      for (let i = 0; i < agent.path.length - 1; i++) {
+        const a = navContext.grid[agent.path[i]];
+        const b = navContext.grid[agent.path[i + 1]];
+        if (!a || !b) continue;
+
+        const pointA = new THREE.Vector3(a.x, Math.max(a.height, seaLevel) + 0.25, a.z);
+        const pointB = new THREE.Vector3(b.x, Math.max(b.height, seaLevel) + 0.25, b.z);
+
+        const segmentType: 'land' | 'water' | 'boat' =
+          boatStart != null && boatEnd != null && i >= boatStart && i < boatEnd
+            ? 'boat'
+            : b.type === 'water'
+              ? 'water'
+              : 'land';
+
+        if (segmentType !== currentType) {
+          flush();
+          currentType = segmentType;
+          bucket.push(pointA);
+        }
+
+        bucket.push(pointB);
+      }
+
+      flush();
+    });
+
+    return segments;
+  }, [config.showRouteDebug, humanIds, navContext, pathDebugVersion, seaLevel]);
 
   const formatLastUsed = useCallback((timestamp: number) => {
     if (!timestamp) return 'Nunca';
@@ -392,6 +489,15 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
     return () => window.clearInterval(timer);
   }, []);
 
+  const pushDebugEvent = useCallback((event: Omit<DebugEvent, 'id'>) => {
+    setDebugEvents((prev) => {
+      const next = [{ id: `evt-${Math.random().toString(16).slice(2, 8)}`, ...event }, ...prev];
+      return next.slice(0, 50);
+    });
+  }, []);
+
+  const markPathDebugDirty = useCallback(() => setPathDebugVersion((value) => value + 1), []);
+
   const randomPauseDuration = useCallback(() => 1800 + Math.random() * 2200, []);
   const randomPauseInterval = useCallback(() => 4500 + Math.random() * 7000, []);
 
@@ -399,16 +505,37 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
     (agent: AgentRecord, preferLand = false) => {
       if (!navContext.grid.length) return;
       const startIndex = findNearestWalkable(agent.position, navContext);
-      if (startIndex == null) return;
+      if (startIndex == null) {
+        pushDebugEvent({
+          type: 'route-fail',
+          timestamp: performance.now(),
+          message: `${agent.id}: sin celda inicial navegable`,
+        });
+        return;
+      }
 
       const desiredDistance = Math.max(size * 0.15, 20);
       let destination = findRandomWalkable(navContext, startIndex, desiredDistance);
       if (destination == null) destination = findRandomWalkable(navContext, startIndex, 0);
-      if (destination == null) return;
+      if (destination == null) {
+        pushDebugEvent({
+          type: 'route-fail',
+          timestamp: performance.now(),
+          message: `${agent.id}: sin destino accesible`,
+        });
+        return;
+      }
 
       const boatNearby = findNearestBoat(agent.position, navContext);
       const path = preferLand ? buildLandPath(startIndex, destination, navContext) : buildMultimodalPath(startIndex, destination, navContext);
-      if (path.length < 2) return;
+      if (path.length < 2) {
+        pushDebugEvent({
+          type: 'route-fail',
+          timestamp: performance.now(),
+          message: `${agent.id}: no se pudo construir ruta`,
+        });
+        return;
+      }
 
       agent.path = path;
       agent.waypoint = 1;
@@ -427,12 +554,14 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       agent.waitingUntil = 0;
       agent.dismountTarget = null;
 
+      markPathDebugDirty();
+
       const nextCell = navContext.grid[path[1]];
       if (nextCell) {
         agent.heading = Math.atan2(nextCell.x - agent.position.x, nextCell.z - agent.position.z);
       }
     },
-    [navContext, navResolution, randomPauseInterval, releaseBoatForAgent, size]
+    [markPathDebugDirty, navContext, navResolution, pushDebugEvent, randomPauseInterval, releaseBoatForAgent, size]
   );
 
   const createAgent = useCallback(
@@ -907,8 +1036,13 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
             waterEnd += 1;
           }
 
+          const prevStart = agent.boatWaypointStart;
+          const prevEnd = agent.boatWaypointEnd;
           agent.boatWaypointStart = agent.waypoint;
           agent.boatWaypointEnd = waterEnd;
+          if (prevStart !== agent.boatWaypointStart || prevEnd !== agent.boatWaypointEnd) {
+            markPathDebugDirty();
+          }
           const boatCandidate = findAvailableBoat(agent.position, agent.id, BOAT_PROXIMITY_RADIUS);
           const nearbyBoats = navContext.boats.filter((boat) => {
             const cell = navContext.grid[boat.cellIndex];
@@ -930,6 +1064,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
                 agent.path = toBoat;
                 agent.waypoint = 1;
                 agent.state = AgentState.SeekingBoat;
+                markPathDebugDirty();
                 return;
               }
             }
@@ -976,6 +1111,11 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
             agent.mode = boat && boat.mass > 40 ? 'motor' : 'rowing';
             agent.waypoint = agent.boatWaypointStart ?? agent.waypoint;
             agent.mountProgress = 0;
+            pushDebugEvent({
+              type: 'sail',
+              timestamp: performance.now(),
+              message: `${agent.id} zarpó en ${boat?.id ?? 'bote'}`,
+            });
           }
           return;
         }
@@ -986,6 +1126,11 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
             releaseBoatForAgent(agent);
             agent.state = AgentState.Waiting;
             agent.waitingUntil = now + WAIT_RETRY_MS;
+            pushDebugEvent({
+              type: 'route-fail',
+              timestamp: performance.now(),
+              message: `${agent.id}: perdió la embarcación asignada`,
+            });
             return;
           }
 
@@ -1010,6 +1155,11 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
                 : null;
               agent.state = AgentState.Dismounting;
               agent.mountProgress = 0;
+              pushDebugEvent({
+                type: 'dismount',
+                timestamp: performance.now(),
+                message: `${agent.id} desembarca de ${agent.boatId ?? 'bote'}`,
+              });
             }
             return;
           }
@@ -1064,6 +1214,11 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
               markBoatOccupied(boat.id, agent.id);
               agent.state = AgentState.Mounting;
               agent.mountProgress = 0;
+              pushDebugEvent({
+                type: 'mount',
+                timestamp: performance.now(),
+                message: `${agent.id} abordando ${boat.id}`,
+              });
             } else {
               releaseBoatForAgent(agent);
               assignNewDestination(agent, true);
@@ -1317,37 +1472,122 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
         ))}
       </group>
 
+      {config.showRouteDebug && (
+        <group>
+          {pathDebugSegments.map((segment) => {
+            const positions = new Float32Array(segment.points.length * 3);
+            segment.points.forEach((point, idx) => {
+              positions[idx * 3] = point.x;
+              positions[idx * 3 + 1] = point.y;
+              positions[idx * 3 + 2] = point.z;
+            });
+
+            return (
+              <line key={segment.key} frustumCulled={false}>
+                <bufferGeometry>
+                  <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+                </bufferGeometry>
+                <lineBasicMaterial color={segment.color} transparent opacity={0.9} linewidth={2} />
+              </line>
+            );
+          })}
+        </group>
+      )}
+
 
       {/* Instanced Objects (Trees, Rocks) */}
       <TerrainObjects data={pines} type="pine" showHitboxes={showHitboxes} season={season} />
       <TerrainObjects data={broadleafs} type="broadleaf" showHitboxes={showHitboxes} season={season} />
       <TerrainObjects data={rocks} type="rock" showHitboxes={showHitboxes} season={season} />
       <BoatFleet boats={boatStates} showHitboxes={showHitboxes} />
+      {config.showBoatMarkers && (
+        <group>
+          {boatMarkers.map((marker) => {
+            const color =
+              marker.status === 'occupied' ? '#ef4444' : marker.status === 'reserved' ? '#f59e0b' : '#22d3ee';
+            const outline = marker.status === 'occupied' ? '#7f1d1d' : marker.status === 'reserved' ? '#92400e' : '#0f172a';
+            return (
+              <Billboard key={`boat-marker-${marker.id}`} position={[marker.x, seaLevel + 3, marker.z]}>
+                <mesh>
+                  <circleGeometry args={[0.7, 24]} />
+                  <meshBasicMaterial color={outline} transparent opacity={0.7} />
+                </mesh>
+                <mesh position={[0, 0.02, 0]}>
+                  <circleGeometry args={[0.5, 24]} />
+                  <meshBasicMaterial color={color} transparent opacity={0.95} />
+                </mesh>
+                <Html center distanceFactor={10} style={{ fontSize: '11px', fontWeight: 700, pointerEvents: 'none' }}>
+                  ⛵
+                </Html>
+              </Billboard>
+            );
+          })}
+        </group>
+      )}
 
       <Html fullscreen pointerEvents="none">
-        <div className="absolute bottom-4 left-4 w-80 max-h-64 overflow-y-auto bg-gray-900/80 text-xs text-white rounded-lg border border-white/10 shadow-lg pointer-events-auto backdrop-blur-sm">
+        <div className="absolute bottom-4 left-4 w-96 max-h-80 overflow-y-auto bg-gray-900/80 text-xs text-white rounded-lg border border-white/10 shadow-lg pointer-events-auto backdrop-blur-sm">
           <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
-            <div className="text-sm font-semibold">Uso de botes</div>
-            <span className="text-[11px] text-gray-400">{boatUsage.length} activos</span>
+            <div className="text-sm font-semibold">Panel debug de navegación</div>
+            <span className="text-[11px] text-gray-400">Botes: {boatUsage.length}</span>
           </div>
           <div className="divide-y divide-white/5">
-            {boatUsage.map((boat) => {
-              const status = boat.occupiedBy
-                ? `Ocupado por ${boat.occupiedBy}`
-                : boat.reservedBy
-                  ? `Reservado por ${boat.reservedBy}`
-                  : 'Libre';
+            <div className="px-3 py-2 space-y-2">
+              <div className="text-[11px] uppercase text-gray-400">Estado de botes</div>
+              {boatUsage.map((boat) => {
+                const status = boat.occupiedBy
+                  ? `Ocupado por ${boat.occupiedBy}`
+                  : boat.reservedBy
+                    ? `Reservado por ${boat.reservedBy}`
+                    : 'Libre';
 
-              return (
-                <div key={boat.id} className="px-3 py-2 flex items-center justify-between gap-2">
-                  <div>
-                    <div className="text-[11px] font-semibold">{boat.id}</div>
-                    <div className="text-[11px] text-gray-400">{status}</div>
+                return (
+                  <div key={boat.id} className="px-3 py-2 bg-white/5 rounded flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[11px] font-semibold">{boat.id}</div>
+                      <div className="text-[11px] text-gray-400">{status}</div>
+                    </div>
+                    <span className="text-[11px] text-gray-300">{formatLastUsed(boat.lastUsedAt)}</span>
                   </div>
-                  <span className="text-[11px] text-gray-300">{formatLastUsed(boat.lastUsedAt)}</span>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+
+            <div className="px-3 py-2 space-y-2">
+              <div className="text-[11px] uppercase text-gray-400">Eventos recientes</div>
+              <div className="space-y-2">
+                {debugEvents.length === 0 && <div className="text-[11px] text-gray-500">Sin eventos registrados.</div>}
+                {debugEvents.map((event) => {
+                  const label =
+                    event.type === 'mount'
+                      ? 'Montar'
+                      : event.type === 'sail'
+                        ? 'Zarpar'
+                        : event.type === 'dismount'
+                          ? 'Desembarcar'
+                          : 'Fallo de ruta';
+
+                  const badge =
+                    event.type === 'route-fail'
+                      ? 'bg-red-500/20 text-red-200'
+                      : event.type === 'sail'
+                        ? 'bg-emerald-500/20 text-emerald-200'
+                        : 'bg-amber-500/20 text-amber-100';
+
+                  return (
+                    <div key={event.id} className="px-3 py-2 bg-white/5 rounded border border-white/5">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] uppercase font-semibold ${badge}`}>
+                          {label}
+                        </span>
+                        <span className="text-[10px] text-gray-400">{formatLastUsed(event.timestamp)}</span>
+                      </div>
+                      <div className="text-[11px] text-gray-200">{event.message}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       </Html>

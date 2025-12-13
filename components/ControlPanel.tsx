@@ -169,6 +169,28 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu
               </button>
             </div>
 
+            <div className="space-y-2 pt-2 text-xs text-gray-200">
+              <div className="font-semibold text-gray-300">Depuración de navegación</div>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={config.showBoatMarkers}
+                  onChange={(e) => updateConfig('showBoatMarkers', e.target.checked)}
+                  className="rounded bg-gray-700 border-gray-600"
+                />
+                <span>Iconos de botes (3D + minimapa)</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={config.showRouteDebug}
+                  onChange={(e) => updateConfig('showRouteDebug', e.target.checked)}
+                  className="rounded bg-gray-700 border-gray-600"
+                />
+                <span>Rutas multimodales en colores</span>
+              </label>
+            </div>
+
             <div className="space-y-1">
               <div className="flex justify-between text-xs text-gray-400">
                 <label>Intensidad</label>

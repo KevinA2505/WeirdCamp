@@ -10,6 +10,7 @@ interface MiniMapProps {
   config: WorldConfig;
   cameraPosition?: Position2D;
   playerPosition?: Position2D;
+  boats?: { id: string; x: number; z: number; status: 'idle' | 'reserved' | 'occupied' }[];
   showOverlay?: boolean;
   className?: string;
 }
@@ -21,6 +22,7 @@ export const MiniMap: React.FC<MiniMapProps> = ({
   config,
   cameraPosition,
   playerPosition,
+  boats = [],
   showOverlay = true,
   className,
 }) => {
@@ -109,7 +111,29 @@ export const MiniMap: React.FC<MiniMapProps> = ({
     ctx.fillText('Límite', wallTopLeft.x + 4, wallTopLeft.y + 12);
     ctx.fillStyle = '#34d399';
     ctx.fillText(hasPosition ? 'Jugador' : 'Centro', marker.x + 8, marker.y - 8);
-  }, [config, cameraPosition, playerPosition, showOverlay]);
+    boats.forEach((boat) => {
+      const marker = worldToCanvas(boat.x, boat.z);
+      ctx.beginPath();
+      ctx.arc(marker.x, marker.y, 6, 0, Math.PI * 2);
+
+      const fill =
+        boat.status === 'occupied'
+          ? '#f43f5e'
+          : boat.status === 'reserved'
+            ? '#f59e0b'
+            : '#22d3ee';
+
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.lineWidth = 2;
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#0b1021';
+      ctx.font = 'bold 9px Inter, system-ui, -apple-system, sans-serif';
+      ctx.fillText('⛵', marker.x - 5, marker.y + 4);
+    });
+  }, [boats, config, cameraPosition, playerPosition, showOverlay]);
 
   if (!showOverlay) return null;
 

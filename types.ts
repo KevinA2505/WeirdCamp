@@ -14,6 +14,8 @@ export interface WorldConfig {
   showNavMesh: boolean;
   showLandNavMesh: boolean;
   showWaterNavMesh: boolean;
+  showBoatMarkers: boolean;
+  showRouteDebug: boolean;
   dayNightSpeed: number;
   flashlightEnabled: boolean;
   flashlightIntensity: number;
