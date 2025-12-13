@@ -1,5 +1,5 @@
 import { createNoise2D } from 'simplex-noise';
-import { TerrainData, ObjectInstance, Season } from '../types';
+import { TerrainData, ObjectInstance, Season, NavigationCell } from '../types';
 import * as THREE from 'three';
 
 // Define Palettes for each season
@@ -137,7 +137,12 @@ export const generateTerrain = (
 
   const segmentSize = size / effectiveResolution;
   const halfSize = size / 2;
-  const WATER_LEVEL = 0;
+  const WATER_LEVEL = waterLevel;
+
+  const peakThreshold = 60 * effectiveRelief;
+
+  const navResolution = resolutionPlusOne;
+  const navGrid: NavigationCell[] = new Array(navResolution * navResolution);
 
   const GLOBAL_SCALE = 0.006;
 
@@ -205,9 +210,10 @@ export const generateTerrain = (
       positions[index * 3 + 2] = realZ;
 
       // --- Special Hitboxes ---
-      
+
       // Water Hitbox: Identify underwater terrain
-      if (y < WATER_LEVEL) {
+      const isWater = y < WATER_LEVEL;
+      if (isWater) {
           waterInstances.push({
               x: realX,
               y: WATER_LEVEL + 0.2, // Float slightly above water surface
@@ -219,8 +225,8 @@ export const generateTerrain = (
 
       // Peak Hitbox: Identify very high terrain
       // Threshold depends on relief scale but generally peaks are > 60% max height
-      const peakThreshold = 60 * effectiveRelief; // Increased to target tips
-      if (y > peakThreshold) {
+      const isPeak = y > peakThreshold; // Increased to target tips
+      if (isPeak) {
           peakInstances.push({
               x: realX,
               y: y,
@@ -229,6 +235,16 @@ export const generateTerrain = (
               id: `p-${index}`
           });
       }
+
+      navGrid[index] = {
+          x: realX,
+          z: realZ,
+          height: y,
+          slope: 0,
+          type: isWater ? 'water' : 'land',
+          walkable: false,
+          flags: { isWater, isPeak },
+      };
 
 
       // --- E. Biomes & Coloring ---
@@ -285,6 +301,40 @@ export const generateTerrain = (
     }
   }
 
+  const heightAt = (i: number, j: number) => {
+    const clampedI = THREE.MathUtils.clamp(i, 0, navResolution - 1);
+    const clampedJ = THREE.MathUtils.clamp(j, 0, navResolution - 1);
+    return navGrid[clampedI * navResolution + clampedJ].height;
+  };
+
+  const maxWalkableSlope = 1.1; // ~47 degrees
+  for (let i = 0; i < navResolution; i++) {
+    for (let j = 0; j < navResolution; j++) {
+      const index = i * navResolution + j;
+      const cell = navGrid[index];
+
+      const slopeX = Math.max(
+        Math.abs(cell.height - heightAt(i + 1, j)),
+        Math.abs(cell.height - heightAt(i - 1, j))
+      ) / segmentSize;
+
+      const slopeZ = Math.max(
+        Math.abs(cell.height - heightAt(i, j + 1)),
+        Math.abs(cell.height - heightAt(i, j - 1))
+      ) / segmentSize;
+
+      const slope = Math.max(slopeX, slopeZ);
+
+      const walkable = !cell.flags.isWater && !cell.flags.isPeak && slope <= maxWalkableSlope;
+
+      navGrid[index] = {
+        ...cell,
+        slope,
+        walkable,
+      };
+    }
+  }
+
   for (let i = 0; i < effectiveResolution; i++) {
     for (let j = 0; j < effectiveResolution; j++) {
       const a = i * resolutionPlusOne + j;
@@ -311,6 +361,8 @@ export const generateTerrain = (
     rocks,
     waterInstances,
     peakInstances,
-    segmentSize
+    segmentSize,
+    navGrid,
+    navResolution
   };
 };

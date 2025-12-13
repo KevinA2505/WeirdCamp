@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { WorldConfig, ObjectInstance } from '../types';
+import { WorldConfig, ObjectInstance, NavigationCell } from '../types';
 import { generateTerrain } from '../utils/noise';
 import { TerrainObjects } from './TerrainObjects';
 import { Billboard, Sky, Stars } from '@react-three/drei';
@@ -61,6 +61,59 @@ const HitboxLayer: React.FC<{
         transparent
         opacity={opacity}
         depthWrite={visible}
+      />
+    </instancedMesh>
+  );
+};
+
+const NavigationOverlay: React.FC<{
+  grid: NavigationCell[];
+  segmentSize: number;
+  visible: boolean;
+}> = ({ grid, segmentSize, visible }) => {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+
+  const overlayHeight = 0.15;
+  const overlayScale = segmentSize * 0.92;
+
+  useLayoutEffect(() => {
+    if (!meshRef.current || !visible) return;
+
+    const mesh = meshRef.current;
+    const reusableColor = new THREE.Color();
+
+    grid.forEach((cell, i) => {
+      dummy.position.set(cell.x, cell.height + overlayHeight, cell.z);
+      dummy.rotation.set(-Math.PI / 2, 0, 0);
+      dummy.scale.set(overlayScale, overlayScale, 1);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+
+      if (cell.type === 'water') {
+        mesh.setColorAt(i, reusableColor.set('#22d3ee'));
+      } else if (cell.walkable) {
+        mesh.setColorAt(i, reusableColor.set('#22c55e'));
+      } else {
+        mesh.setColorAt(i, reusableColor.set('#f97316'));
+      }
+    });
+
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, [grid, dummy, overlayHeight, overlayScale, visible]);
+
+  if (!visible || grid.length === 0) return null;
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, grid.length]} frustumCulled={false}>
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial
+        transparent
+        opacity={0.32}
+        depthWrite={false}
+        side={THREE.DoubleSide}
+        vertexColors
       />
     </instancedMesh>
   );
@@ -132,7 +185,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   const precipitationRef = useRef<THREE.Points>(null);
 
   // Memoize terrain generation
-  const { positions, colors, normals, indices, pines, broadleafs, rocks, waterInstances, peakInstances, segmentSize } = useMemo(() => {
+  const { positions, colors, normals, indices, pines, broadleafs, rocks, waterInstances, peakInstances, segmentSize, navGrid } = useMemo(() => {
     return generateTerrain(
       size,
       resolution,
@@ -523,6 +576,8 @@ export const World: React.FC<WorldProps> = ({ config }) => {
           polygonOffsetUnits={-1}
         />
       </mesh>
+
+      <NavigationOverlay grid={navGrid} segmentSize={segmentSize} visible={showHitboxes} />
 
 
       {/* Instanced Objects (Trees, Rocks) */}
