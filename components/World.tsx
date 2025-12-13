@@ -333,7 +333,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
 
     for (let index = 0; index < navGrid.length; index++) {
       const cell = navGrid[index];
-      if (!cell || !cell.walkable || cell.type !== 'water') continue;
+      if (!cell || cell.type !== 'water') continue;
 
       const ci = Math.floor(index / navResolution);
       const cj = index % navResolution;
