@@ -11,6 +11,7 @@ const App = () => {
     size: 260,
     resolution: 140,
     seed: Math.random() * 10000,
+    waterLevel: 0,
     forestDensity: 0.25,
     rockDensity: 0.05,
     reliefScale: 0.95,

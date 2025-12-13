@@ -4,6 +4,7 @@ export interface WorldConfig {
   size: number;
   resolution: number; // Segments per side
   seed: number;
+  waterLevel: number;
   forestDensity: number;
   rockDensity: number;
   reliefScale: number;
