@@ -1,10 +1,24 @@
 import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
-import { useThree, useFrame } from '@react-three/fiber';
+import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { WorldConfig, ObjectInstance } from '../types';
 import { generateTerrain } from '../utils/noise';
 import { TerrainObjects } from './TerrainObjects';
-import { Sky, Stars } from '@react-three/drei';
+import { Billboard, Sky, Stars } from '@react-three/drei';
+
+type DayPhase = 'dawn' | 'noon' | 'dusk' | 'midnight';
+type WeatherType = 'clear' | 'rain' | 'snow';
+
+interface WeatherState {
+  type: WeatherType;
+  intensity: number;
+  clouds: CloudInstance[];
+}
+
+interface CloudInstance {
+  position: [number, number, number];
+  scale: number;
+}
 
 interface WorldProps {
   config: WorldConfig;
@@ -58,6 +72,18 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   const [ambientIntensity, setAmbientIntensity] = useState(0.5);
   const [skyRayleigh, setSkyRayleigh] = useState(0.5);
   const [time, setTime] = useState(0);
+  const [starVisibility, setStarVisibility] = useState(1);
+
+  // Weather State
+  const [weather, setWeather] = useState<WeatherState>({
+    type: 'clear',
+    intensity: 0,
+    clouds: [],
+  });
+  const weatherTimer = useRef(0);
+  useLayoutEffect(() => {
+    rollWeather();
+  }, []);
 
   // Fog State
   const [fogColor, setFogColor] = useState(new THREE.Color('#ffffff'));
@@ -67,6 +93,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   // References
   const lightRef = useRef<THREE.PointLight>(null);
   const terrainRef = useRef<THREE.Mesh>(null);
+  const precipitationRef = useRef<THREE.Points>(null);
 
   // Memoize terrain generation
   const { positions, colors, normals, indices, pines, broadleafs, rocks, waterInstances, peakInstances, segmentSize } = useMemo(() => {
@@ -114,80 +141,147 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   }, [size]);
 
 
+  const wrapTime = (value: number) => {
+    const fullCycle = Math.PI * 2;
+    return value % fullCycle;
+  };
+
+  const getPhaseAndProgress = (cycle: number): { phase: DayPhase; progress: number } => {
+    const normalized = cycle / (Math.PI * 2); // 0-1
+    const segment = Math.floor(normalized * 4) % 4;
+    const segmentProgress = (normalized * 4) - segment;
+
+    switch (segment) {
+      case 0:
+        return { phase: 'dawn', progress: segmentProgress };
+      case 1:
+        return { phase: 'noon', progress: segmentProgress };
+      case 2:
+        return { phase: 'dusk', progress: segmentProgress };
+      default:
+        return { phase: 'midnight', progress: segmentProgress };
+    }
+  };
+
+  const createClouds = (count: number): CloudInstance[] =>
+    Array.from({ length: count }, () => ({
+      position: [
+        (Math.random() - 0.5) * size,
+        size * 0.25 + Math.random() * 15,
+        (Math.random() - 0.5) * size,
+      ],
+      scale: 8 + Math.random() * 12,
+    }));
+
+  const rollWeather = () => {
+    const chance = Math.random();
+    const shouldPrecipitate = chance > 0.8;
+    const type: WeatherType = shouldPrecipitate ? (season === 'winter' ? 'snow' : 'rain') : 'clear';
+    const intensity = shouldPrecipitate ? 0.3 + Math.random() * 0.7 : 0;
+    const cloudCount = shouldPrecipitate ? 14 : 7;
+    setWeather({ type, intensity, clouds: createClouds(cloudCount) });
+  };
+
   // Frame Loop for Cycle and Interactions
   useFrame((state, delta) => {
     // 1. Day/Night Cycle Logic
     if (dayNightSpeed > 0) {
       const radiansPerSecond = 0.0261799;
-      const newTime = time + delta * dayNightSpeed * radiansPerSecond;
+      const newTime = wrapTime(time + delta * dayNightSpeed * radiansPerSecond);
       setTime(newTime);
-      
-      const radius = size * 1.5; 
-      const elevation = Math.sin(newTime); 
+
+      const radius = size * 1.5;
+      const elevation = Math.sin(newTime);
       const azimuth = Math.cos(newTime);
-      
+
       setSunPosition(new THREE.Vector3(azimuth * radius, elevation * radius, 0));
 
-      // --- Calculate Colors & Atmosphere based on Elevation ---
-      let targetSunColor = new THREE.Color('#ffffff');
-      let targetAmbientColor = new THREE.Color('#ffffff');
-      let targetIntensity = 0.5;
-      let targetRayleigh = 0.5;
-      let targetFogColor = new THREE.Color('#ffffff');
+      const { phase, progress } = getPhaseAndProgress(newTime);
 
-      if (elevation > 0.2) {
-          // DAY
-          targetSunColor.set('#fff7cd'); 
-          targetIntensity = 0.7;
-          targetRayleigh = 0.3; 
-          
-          // Season adjustments for Day
-          if (season === 'winter') {
-              targetAmbientColor.set('#ddeeff'); 
-              targetFogColor.set('#e2e8f0'); // White mist
-              targetIntensity = 0.8; 
-          } else if (season === 'autumn') {
-              targetAmbientColor.set('#ffedd5');
-              targetFogColor.set('#fdba74'); // Orange mist
-              targetIntensity = 0.6;
-          } else if (season === 'summer') {
-              targetAmbientColor.set('#b0d6ff'); 
-              targetFogColor.set('#bae6fd'); // Clear blueish
-          } else {
-              // Spring
-              targetAmbientColor.set('#dcfce7'); 
-              targetFogColor.set('#e0f2fe');
-          }
+      const lerpColors = (from: THREE.Color, to: THREE.Color, t: number) => from.clone().lerp(to, t);
+      const lerpNumbers = (from: number, to: number, t: number) => THREE.MathUtils.lerp(from, to, t);
 
-      } else if (elevation > -0.1) {
-          // DAWN / DUSK
-          targetSunColor.set('#ff7b00'); 
-          targetAmbientColor.set('#6a4c93'); 
-          targetFogColor.set('#4c1d95'); // Purple fog
-          targetIntensity = 0.3;
-          targetRayleigh = 3.0; 
-      } else {
-          // NIGHT
-          targetSunColor.set('#000000'); 
-          targetAmbientColor.set('#020617'); 
-          targetFogColor.set('#020617'); // Dark fog matches night sky
-          targetIntensity = 0.1;
-          targetRayleigh = 0.1;
+      const phaseTargets: Record<DayPhase, {
+        sun: THREE.Color;
+        ambient: THREE.Color;
+        fog: THREE.Color;
+        intensity: number;
+        rayleigh: number;
+        stars: number;
+      }> = {
+        dawn: {
+          sun: new THREE.Color('#ffb347'),
+          ambient: new THREE.Color('#7c3aed'),
+          fog: new THREE.Color('#5b21b6'),
+          intensity: 0.4,
+          rayleigh: 2.5,
+          stars: 0.4,
+        },
+        noon: {
+          sun: new THREE.Color('#fff7cd'),
+          ambient: new THREE.Color('#ffffff'),
+          fog: season === 'autumn' ? new THREE.Color('#fed7aa') : new THREE.Color('#e0f2fe'),
+          intensity: 0.8,
+          rayleigh: 0.25,
+          stars: 0,
+        },
+        dusk: {
+          sun: new THREE.Color('#ff7043'),
+          ambient: new THREE.Color('#6d28d9'),
+          fog: new THREE.Color('#312e81'),
+          intensity: 0.35,
+          rayleigh: 2.0,
+          stars: 0.5,
+        },
+        midnight: {
+          sun: new THREE.Color('#0b1021'),
+          ambient: new THREE.Color('#0f172a'),
+          fog: new THREE.Color('#0b132b'),
+          intensity: 0.1,
+          rayleigh: 0.1,
+          stars: 1,
+        },
+      };
+
+      const nextPhase = phase === 'dawn' ? 'noon' : phase === 'noon' ? 'dusk' : phase === 'dusk' ? 'midnight' : 'dawn';
+      const fromTarget = phaseTargets[phase];
+      const toTarget = phaseTargets[nextPhase];
+
+      const targetSunColor = lerpColors(fromTarget.sun, toTarget.sun, progress);
+      const baseAmbient = lerpColors(fromTarget.ambient, toTarget.ambient, progress);
+      const targetIntensity = lerpNumbers(fromTarget.intensity, toTarget.intensity, progress);
+      const targetRayleigh = lerpNumbers(fromTarget.rayleigh, toTarget.rayleigh, progress);
+      const targetFogColor = lerpColors(fromTarget.fog, toTarget.fog, progress);
+      const targetStars = lerpNumbers(fromTarget.stars, toTarget.stars, progress);
+
+      const seasonalAmbient = baseAmbient.clone();
+      if (season === 'winter') {
+        seasonalAmbient.lerp(new THREE.Color('#e2e8f0'), 0.35);
+      } else if (season === 'autumn') {
+        seasonalAmbient.lerp(new THREE.Color('#fcd34d'), 0.15);
       }
 
       setSunColor(prev => prev.lerp(targetSunColor, 0.05));
-      setAmbientColor(prev => prev.lerp(targetAmbientColor, 0.05));
+      setAmbientColor(prev => prev.lerp(seasonalAmbient, 0.05));
       setAmbientIntensity(prev => THREE.MathUtils.lerp(prev, targetIntensity, 0.05));
       setSkyRayleigh(prev => THREE.MathUtils.lerp(prev, targetRayleigh, 0.02));
-      setFogColor(prev => prev.lerp(targetFogColor, 0.02));
+      setFogColor(prev => prev.lerp(targetFogColor, 0.05));
+      setStarVisibility(prev => THREE.MathUtils.lerp(prev, targetStars, 0.05));
     }
 
     // Update Fog Settings based on config
     const fogDensityMultiplier = season === 'winter' ? 0.6 : (season === 'autumn' ? 0.8 : 1.0);
     setFogNear(10);
-    setFogFar(size * fogDensityMultiplier); 
+    setFogFar(size * fogDensityMultiplier);
 
-    // 2. Flashlight
+    // 2. Weather ticker
+    weatherTimer.current += delta;
+    if (weatherTimer.current > 18) {
+      rollWeather();
+      weatherTimer.current = 0;
+    }
+
+    // 3. Flashlight
     if (flashlightEnabled && lightRef.current && terrainRef.current) {
         state.raycaster.setFromCamera(state.pointer, state.camera);
         const intersects = state.raycaster.intersectObject(terrainRef.current, false);
@@ -201,6 +295,79 @@ export const World: React.FC<WorldProps> = ({ config }) => {
         }
     }
   });
+
+  const Precipitation: React.FC<{ type: WeatherType; intensity: number; area: number }> = ({ type, intensity, area }) => {
+    const count = Math.max(0, Math.floor(1200 * intensity));
+    const positions = useMemo(() => {
+      const arr = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        arr[i * 3] = (Math.random() - 0.5) * area;
+        arr[i * 3 + 1] = Math.random() * 60 + 30;
+        arr[i * 3 + 2] = (Math.random() - 0.5) * area;
+      }
+      return arr;
+    }, [count, area]);
+
+    const speeds = useMemo(() => {
+      const arr = new Float32Array(count);
+      for (let i = 0; i < count; i++) {
+        arr[i] = type === 'snow' ? -(3 + Math.random() * 2) : -(12 + Math.random() * 6);
+      }
+      return arr;
+    }, [count, type]);
+
+    useFrame((_, delta) => {
+      if (!precipitationRef.current) return;
+      const positionsAttr = precipitationRef.current.geometry.getAttribute('position') as THREE.BufferAttribute;
+      for (let i = 0; i < count; i++) {
+        positionsAttr.array[i * 3 + 1] += speeds[i] * delta * 10;
+
+        if (positionsAttr.array[i * 3 + 1] < 0) {
+          positionsAttr.array[i * 3] = (Math.random() - 0.5) * area;
+          positionsAttr.array[i * 3 + 1] = Math.random() * 60 + 40;
+          positionsAttr.array[i * 3 + 2] = (Math.random() - 0.5) * area;
+        }
+      }
+      positionsAttr.needsUpdate = true;
+    });
+
+    if (count === 0) return null;
+
+    return (
+      <points ref={precipitationRef} frustumCulled={false}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} />
+        </bufferGeometry>
+        <pointsMaterial
+          color={type === 'snow' ? '#e2e8f0' : '#60a5fa'}
+          size={type === 'snow' ? 0.35 : 0.2}
+          transparent
+          opacity={0.6}
+          depthWrite={false}
+          sizeAttenuation
+        />
+      </points>
+    );
+  };
+
+  const CloudLayer: React.FC<{ clouds: CloudInstance[] }> = ({ clouds }) => (
+    <group>
+      {clouds.map((cloud, index) => (
+        <Billboard key={`cloud-${index}`} position={cloud.position} follow rotation={[0, 0, 0]}>
+          <mesh>
+            <planeGeometry args={[cloud.scale, cloud.scale * 0.6]} />
+            <meshStandardMaterial
+              color="#e5e7eb"
+              transparent
+              opacity={0.28}
+              depthWrite={false}
+              emissiveIntensity={0}
+            />
+          </mesh>
+        </Billboard>
+      ))}
+    </group>
+  );
 
   return (
     <group>
@@ -236,14 +403,15 @@ export const World: React.FC<WorldProps> = ({ config }) => {
           />
       )}
       
-      <Stars 
-        radius={300} 
-        depth={50} 
-        count={5000} 
-        factor={4} 
-        saturation={0} 
-        fade 
-        speed={0.5} 
+      <Stars
+        radius={300}
+        depth={50}
+        count={5000}
+        factor={4}
+        saturation={0}
+        fade
+        speed={0.5}
+        opacity={starVisibility}
       />
 
       {flashlightEnabled && (
@@ -279,12 +447,16 @@ export const World: React.FC<WorldProps> = ({ config }) => {
           size={segmentSize} 
           visible={showHitboxes} 
       />
-      <HitboxLayer 
-          instances={peakInstances} 
+      <HitboxLayer
+          instances={peakInstances}
           color="#f97316" // Orange
-          size={segmentSize} 
-          visible={showHitboxes} 
+          size={segmentSize}
+          visible={showHitboxes}
       />
+
+      {/* Atmosphere */}
+      <CloudLayer clouds={weather.clouds} />
+      {weather.type !== 'clear' && <Precipitation type={weather.type} intensity={weather.intensity} area={size} />}
 
 
       {/* Water Plane */}
