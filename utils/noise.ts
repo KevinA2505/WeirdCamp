@@ -212,7 +212,7 @@ export const generateTerrain = (
       // --- Special Hitboxes ---
 
       // Water Hitbox: Identify underwater terrain
-      const isWater = y < WATER_LEVEL;
+      const isWater = y <= WATER_LEVEL;
       if (isWater) {
           waterInstances.push({
               x: realX,
@@ -243,7 +243,7 @@ export const generateTerrain = (
           z: realZ,
           height: navHeight,
           slope: 0,
-          type: isWater ? 'water' : 'land',
+          type: navHeight <= WATER_LEVEL ? 'water' : 'land',
           walkable: false,
           flags: { isWater, isPeak },
       };
