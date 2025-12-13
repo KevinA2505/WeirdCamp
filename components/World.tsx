@@ -14,7 +14,6 @@ const WATER_LEVEL = 0;
 interface WeatherState {
   type: WeatherType;
   intensity: number;
-  clouds: CloudInstance[];
 }
 
 interface CloudInstance {
@@ -88,22 +87,29 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   const [weather, setWeather] = useState<WeatherState>({
     type: 'clear',
     intensity: 0,
-    clouds: createClouds(8),
   });
+  const staticClouds = useMemo<CloudInstance[]>(() => createClouds(8), [size]);
+  const [rainClouds, setRainClouds] = useState<CloudInstance[]>([]);
   const [cloudOpacity, setCloudOpacity] = useState(0.18);
   const [cloudOpacityTarget, setCloudOpacityTarget] = useState(0.18);
+  const [rainCloudOpacity, setRainCloudOpacity] = useState(0);
+  const [rainCloudOpacityTarget, setRainCloudOpacityTarget] = useState(0);
+  const rainCloudTargetRef = useRef(0);
+  const rainSpawnTimer = useRef(0);
   useEffect(() => {
     const targetType: WeatherType = config.rainEnabled ? (season === 'winter' ? 'snow' : 'rain') : 'clear';
     const targetIntensity = config.rainEnabled ? config.rainIntensity : 0;
-    const targetCloudCount = config.rainEnabled ? 18 : 8;
+    const targetRainCloudCount = config.rainEnabled ? Math.round(10 + config.rainIntensity * 8) : 0;
 
     setWeather((prev) => ({
+      ...prev,
       type: targetType,
       intensity: targetIntensity,
-      clouds: prev.clouds.length === targetCloudCount ? prev.clouds : createClouds(targetCloudCount),
     }));
 
-    setCloudOpacityTarget(config.rainEnabled ? 0.45 : 0.18);
+    rainCloudTargetRef.current = targetRainCloudCount;
+    setCloudOpacityTarget(config.rainEnabled ? 0.28 : 0.18);
+    setRainCloudOpacityTarget(config.rainEnabled ? 0.6 : 0);
   }, [config.rainEnabled, config.rainIntensity, season, size]);
 
   const starsRef = useRef<THREE.Points>(null);
@@ -324,6 +330,21 @@ export const World: React.FC<WorldProps> = ({ config }) => {
 
     // 2. Weather fades
     setCloudOpacity((prev) => THREE.MathUtils.lerp(prev, cloudOpacityTarget, 0.02));
+    setRainCloudOpacity((prev) => THREE.MathUtils.lerp(prev, rainCloudOpacityTarget, 0.03));
+
+    rainSpawnTimer.current += delta;
+
+    if (rainSpawnTimer.current > 0.6) {
+      if (rainClouds.length < rainCloudTargetRef.current && rainCloudOpacityTarget > 0) {
+        setRainClouds((prev) => [...prev, ...createClouds(1)]);
+      } else if (
+        rainClouds.length > rainCloudTargetRef.current &&
+        (!config.rainEnabled || rainCloudOpacity < 0.1)
+      ) {
+        setRainClouds((prev) => prev.slice(1));
+      }
+      rainSpawnTimer.current = 0;
+    }
 
     // 3. Flashlight
     if (flashlightEnabled && lightRef.current && terrainRef.current) {
@@ -384,7 +405,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
         </bufferGeometry>
         <pointsMaterial
           color={type === 'snow' ? '#e2e8f0' : '#60a5fa'}
-          size={type === 'snow' ? 0.35 : 0.2}
+          size={type === 'snow' ? 0.3675 : 0.21}
           transparent
           opacity={0.6}
           depthWrite={false}
@@ -519,7 +540,8 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       />
 
       {/* Atmosphere */}
-      <CloudLayer clouds={weather.clouds} opacity={cloudOpacity} />
+      <CloudLayer clouds={staticClouds} opacity={cloudOpacity} />
+      <CloudLayer clouds={rainClouds} opacity={rainCloudOpacity} />
       {weather.type !== 'clear' && <Precipitation type={weather.type} intensity={weather.intensity} area={size} />}
 
 
