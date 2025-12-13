@@ -385,6 +385,8 @@ export const generateTerrain = (
         mass: 120,
         friction: 0.35,
         buoyancy: 0.85,
+        occupiedBy: null,
+        lastUsedAt: 0,
       });
     }
   }
