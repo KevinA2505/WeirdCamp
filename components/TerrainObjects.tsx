@@ -91,12 +91,18 @@ export const TerrainObjects: React.FC<InstancedProps> = ({ data, type, showHitbo
         castShadow
         receiveShadow
       />
-      
-      {/* Hitbox Visualization */}
-      {showHitboxes && data.map((obj) => (
+
+      {/* Hitbox Visualization (kept in scene for collisions even if hidden) */}
+      {data.map((obj) => (
          <mesh key={obj.id} position={[obj.x, obj.y + 2, obj.z]}>
             <boxGeometry args={[3 * obj.scale, 5 * obj.scale, 3 * obj.scale]} />
-            <meshBasicMaterial color="red" wireframe />
+            <meshBasicMaterial
+              color="#a855f7"
+              wireframe
+              transparent
+              opacity={showHitboxes ? 0.7 : 0}
+              depthWrite={showHitboxes}
+            />
          </mesh>
       ))}
     </group>
