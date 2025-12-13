@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { WorldConfig, ObjectInstance, NavigationCell, BoatInstance, AgentState } from '../types';
 import { generateTerrain } from '../utils/noise';
 import { TerrainObjects } from './TerrainObjects';
-import { Billboard, Sky, Stars } from '@react-three/drei';
+import { Billboard, Html, Sky, Stars } from '@react-three/drei';
 import { HumanAgent, HumanRuntime } from './HumanAgent';
 import {
   buildMultimodalPath,
@@ -193,6 +193,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
   const rainCloudTargetRef = useRef(0);
   const rainSpawnTimer = useRef(0);
   const fireflyRef = useRef<THREE.Points>(null);
+  const [usageRefresh, setUsageRefresh] = useState(0);
   useEffect(() => {
     const targetType: WeatherType = config.rainEnabled ? (season === 'winter' ? 'snow' : 'rain') : 'clear';
     const targetIntensity = config.rainEnabled ? config.rainIntensity : 0;
@@ -253,19 +254,128 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
     );
   }, [size, resolution, seed, waterLevel, forestDensity, rockDensity, reliefScale, riverWidth, lakeThreshold, season, landBias]);
 
-  const [boatStates, setBoatStates] = useState<BoatInstance[]>(() => boats.map((boat) => ({ ...boat })));
-  const boatOccupants = useRef<Map<string, string | null>>(new Map());
+  const [boatStates, setBoatStates] = useState<BoatInstance[]>(() =>
+    boats.map((boat) => ({ occupiedBy: null, lastUsedAt: 0, ...boat }))
+  );
+  const boatReservations = useRef<Map<string, string>>(new Map());
+  const [reservationVersion, setReservationVersion] = useState(0);
 
   useEffect(() => {
-    const next = new Map<string, string | null>();
-    boatStates.forEach((boat) => next.set(boat.id, boatOccupants.current.get(boat.id) ?? null));
-    boatOccupants.current = next;
-  }, [boatStates]);
+    setBoatStates(boats.map((boat) => ({ occupiedBy: null, lastUsedAt: 0, ...boat })));
+  }, [boats]);
 
   const navContext = useMemo(
     () => createNavContext(navGrid, navResolution, segmentSize, size, boatStates),
     [boatStates, navGrid, navResolution, segmentSize, size]
   );
+
+  const boatUsage = useMemo(
+    () =>
+      boatStates.map((boat) => ({
+        id: boat.id,
+        occupiedBy: boat.occupiedBy,
+        reservedBy: boatReservations.current.get(boat.id) ?? null,
+        lastUsedAt: boat.lastUsedAt,
+      })),
+    [boatStates, reservationVersion, usageRefresh]
+  );
+
+  const formatLastUsed = useCallback((timestamp: number) => {
+    if (!timestamp) return 'Nunca';
+    const seconds = Math.max(0, Math.round((performance.now() - timestamp) / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}m ${seconds % 60}s`;
+  }, []);
+
+  const touchReservations = useCallback(() => setReservationVersion((prev) => prev + 1), []);
+
+  const releaseBoatReservation = useCallback(
+    (boatId: string, agentId: string) => {
+      if (boatReservations.current.get(boatId) === agentId) {
+        boatReservations.current.delete(boatId);
+        touchReservations();
+      }
+    },
+    [touchReservations]
+  );
+
+  const markBoatOccupied = useCallback(
+    (boatId: string, agentId: string) => {
+      setBoatStates((prev) =>
+        prev.map((boat) =>
+          boat.id === boatId ? { ...boat, occupiedBy: agentId, lastUsedAt: performance.now() } : boat
+        )
+      );
+      boatReservations.current.delete(boatId);
+      touchReservations();
+    },
+    [touchReservations]
+  );
+
+  const releaseBoatForAgent = useCallback(
+    (agent: AgentRecord, markLastUsed = false) => {
+      if (!agent.boatId) return;
+      const boatId = agent.boatId;
+      releaseBoatReservation(boatId, agent.id);
+      setBoatStates((prev) =>
+        prev.map((boat) => {
+          if (boat.id !== boatId || boat.occupiedBy !== agent.id) return boat;
+          return { ...boat, occupiedBy: null, lastUsedAt: markLastUsed ? performance.now() : boat.lastUsedAt };
+        })
+      );
+
+      agent.boatId = null;
+      agent.boatWaypointStart = null;
+      agent.boatWaypointEnd = null;
+    },
+    [releaseBoatReservation]
+  );
+
+  const reserveBoatIfAvailable = useCallback(
+    (boatId: string, agentId: string) => {
+      const boat = boatStates.find((entry) => entry.id === boatId);
+      if (!boat) return false;
+      const reservedBy = boatReservations.current.get(boatId);
+      if ((reservedBy && reservedBy !== agentId) || (boat.occupiedBy && boat.occupiedBy !== agentId)) return false;
+      boatReservations.current.set(boatId, agentId);
+      touchReservations();
+      return true;
+    },
+    [boatStates, touchReservations]
+  );
+
+  const findAvailableBoat = useCallback(
+    (position: THREE.Vector3, agentId: string, radius = BOAT_PROXIMITY_RADIUS) => {
+      if (!navContext.boats.length) return null;
+
+      let closest: ReturnType<typeof findNearestBoat> = null;
+      let minDistance = radius;
+
+      for (const boat of navContext.boats) {
+        const state = boatStates.find((entry) => entry.id === boat.instance.id);
+        if (!state) continue;
+        const reservedBy = boatReservations.current.get(boat.instance.id);
+        if (state.occupiedBy && state.occupiedBy !== agentId) continue;
+        if (reservedBy && reservedBy !== agentId) continue;
+
+        const cell = navContext.grid[boat.cellIndex];
+        if (!cell) continue;
+        const distance = Math.hypot(position.x - cell.x, position.z - cell.z);
+        if (distance <= minDistance) {
+          minDistance = distance;
+          closest = boat;
+        }
+      }
+
+      return closest;
+    },
+    [boatStates, navContext]
+  );
+
+  const hasReservation = useCallback((boatId: string, agentId: string) => {
+    return boatReservations.current.get(boatId) === agentId;
+  }, []);
 
   const getGroundedHeight = useCallback(
     (cellHeight: number) => cellHeight + HUMAN_GROUND_OFFSET,
@@ -276,6 +386,11 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
     humansRef.current.clear();
     setHumanIds([]);
   }, [navGrid]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setUsageRefresh((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const randomPauseDuration = useCallback(() => 1800 + Math.random() * 2200, []);
   const randomPauseInterval = useCallback(() => 4500 + Math.random() * 7000, []);
@@ -306,11 +421,8 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       agent.pauseTimer = 0;
       agent.nextPauseAt = performance.now() + randomPauseInterval();
       agent.nextGazeShift = 0;
-      if (agent.boatId) boatOccupants.current.set(agent.boatId, null);
+      releaseBoatForAgent(agent);
       agent.state = AgentState.Walking;
-      agent.boatId = null;
-      agent.boatWaypointStart = null;
-      agent.boatWaypointEnd = null;
       agent.mountProgress = 0;
       agent.waitingUntil = 0;
       agent.dismountTarget = null;
@@ -320,7 +432,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
         agent.heading = Math.atan2(nextCell.x - agent.position.x, nextCell.z - agent.position.z);
       }
     },
-    [navContext, navResolution, randomPauseInterval, size]
+    [navContext, navResolution, randomPauseInterval, releaseBoatForAgent, size]
   );
 
   const createAgent = useCallback(
@@ -797,11 +909,16 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
 
           agent.boatWaypointStart = agent.waypoint;
           agent.boatWaypointEnd = waterEnd;
-          const boatCandidate = findNearestBoat(agent.position, navContext, BOAT_PROXIMITY_RADIUS);
+          const boatCandidate = findAvailableBoat(agent.position, agent.id, BOAT_PROXIMITY_RADIUS);
+          const nearbyBoats = navContext.boats.filter((boat) => {
+            const cell = navContext.grid[boat.cellIndex];
+            if (!cell) return false;
+            const distance = Math.hypot(agent.position.x - cell.x, agent.position.z - cell.z);
+            return distance <= BOAT_PROXIMITY_RADIUS;
+          });
 
-          if (boatCandidate && !boatOccupants.current.get(boatCandidate.instance.id)) {
+          if (boatCandidate && reserveBoatIfAvailable(boatCandidate.instance.id, agent.id)) {
             agent.boatId = boatCandidate.instance.id;
-            boatOccupants.current.set(boatCandidate.instance.id, agent.id);
             const shoreIndex = findNearestWalkable(
               new THREE.Vector3(boatCandidate.instance.x, boatCandidate.instance.y, boatCandidate.instance.z),
               navContext
@@ -817,7 +934,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
               }
             }
 
-            boatOccupants.current.set(boatCandidate.instance.id, null);
+            releaseBoatReservation(boatCandidate.instance.id, agent.id);
             agent.boatId = null;
             agent.waitingUntil = now + WAIT_RETRY_MS;
             agent.state = AgentState.Waiting;
@@ -827,10 +944,24 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
           assignNewDestination(agent, true);
           agent.state = AgentState.Waiting;
           agent.waitingUntil = now + WAIT_RETRY_MS;
+
+          if (nearbyBoats.length && !boatCandidate) {
+            agent.waitingUntil = now + WAIT_RETRY_MS * 1.5;
+          }
           return;
         }
 
         if (agent.state === AgentState.Mounting) {
+          if (agent.boatId) {
+            const boat = boatStates.find((b) => b.id === agent.boatId);
+            if (!boat || (boat.occupiedBy && boat.occupiedBy !== agent.id)) {
+              releaseBoatForAgent(agent);
+              agent.state = AgentState.Waiting;
+              agent.waitingUntil = now + WAIT_RETRY_MS;
+              return;
+            }
+          }
+
           agent.mountProgress = Math.min(1, agent.mountProgress + delta / MOUNT_DURATION);
           const boat = boatStates.find((b) => b.id === agent.boatId);
           if (boat) {
@@ -852,7 +983,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
         if (agent.state === AgentState.Sailing) {
           const boat = boatStates.find((b) => b.id === agent.boatId);
           if (!boat) {
-            if (agent.boatId) boatOccupants.current.set(agent.boatId, null);
+            releaseBoatForAgent(agent);
             agent.state = AgentState.Waiting;
             agent.waitingUntil = now + WAIT_RETRY_MS;
             return;
@@ -906,15 +1037,12 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
           }
 
           if (agent.mountProgress >= 1) {
-            if (agent.boatId) boatOccupants.current.set(agent.boatId, null);
+            releaseBoatForAgent(agent, true);
             if (agent.boatWaypointEnd != null) {
               agent.waypoint = agent.boatWaypointEnd + 1;
             }
             agent.state = AgentState.Walking;
             agent.mode = 'walking';
-            agent.boatId = null;
-            agent.boatWaypointStart = null;
-            agent.boatWaypointEnd = null;
             agent.mountProgress = 0;
             agent.dismountTarget = null;
             agent.waitingUntil = 0;
@@ -928,8 +1056,20 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
           const proximity = boatPosition ? boatPosition.distanceTo(agent.position) : Infinity;
 
           if (proximity < 1.2) {
-            agent.state = AgentState.Mounting;
-            agent.mountProgress = 0;
+            if (
+              boat &&
+              hasReservation(boat.id, agent.id) &&
+              (!boat.occupiedBy || boat.occupiedBy === agent.id)
+            ) {
+              markBoatOccupied(boat.id, agent.id);
+              agent.state = AgentState.Mounting;
+              agent.mountProgress = 0;
+            } else {
+              releaseBoatForAgent(agent);
+              assignNewDestination(agent, true);
+              agent.state = AgentState.Waiting;
+              agent.waitingUntil = now + WAIT_RETRY_MS;
+            }
             return;
           }
         }
@@ -1182,7 +1322,35 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       <TerrainObjects data={pines} type="pine" showHitboxes={showHitboxes} season={season} />
       <TerrainObjects data={broadleafs} type="broadleaf" showHitboxes={showHitboxes} season={season} />
       <TerrainObjects data={rocks} type="rock" showHitboxes={showHitboxes} season={season} />
-          <BoatFleet boats={boatStates} showHitboxes={showHitboxes} />
+      <BoatFleet boats={boatStates} showHitboxes={showHitboxes} />
+
+      <Html fullscreen pointerEvents="none">
+        <div className="absolute bottom-4 left-4 w-80 max-h-64 overflow-y-auto bg-gray-900/80 text-xs text-white rounded-lg border border-white/10 shadow-lg pointer-events-auto backdrop-blur-sm">
+          <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
+            <div className="text-sm font-semibold">Uso de botes</div>
+            <span className="text-[11px] text-gray-400">{boatUsage.length} activos</span>
+          </div>
+          <div className="divide-y divide-white/5">
+            {boatUsage.map((boat) => {
+              const status = boat.occupiedBy
+                ? `Ocupado por ${boat.occupiedBy}`
+                : boat.reservedBy
+                  ? `Reservado por ${boat.reservedBy}`
+                  : 'Libre';
+
+              return (
+                <div key={boat.id} className="px-3 py-2 flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[11px] font-semibold">{boat.id}</div>
+                    <div className="text-[11px] text-gray-400">{status}</div>
+                  </div>
+                  <span className="text-[11px] text-gray-300">{formatLastUsed(boat.lastUsedAt)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Html>
 
       {/* Special Hitbox Layers (Water & Peaks) */}
       <HitboxLayer

@@ -60,6 +60,8 @@ export interface BoatInstance {
   mass: number;
   friction: number;
   buoyancy: number;
+  occupiedBy: string | null;
+  lastUsedAt: number;
 }
 
 export enum AgentState {
