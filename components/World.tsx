@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
+import React, { useMemo, useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { WorldConfig, ObjectInstance } from '../types';
@@ -10,6 +10,7 @@ type DayPhase = 'dawn' | 'noon' | 'dusk' | 'midnight';
 type WeatherType = 'clear' | 'rain' | 'snow';
 
 const WATER_LEVEL = 0;
+const CLOUD_MULTIPLIER = 1.15;
 
 interface WeatherState {
   type: WeatherType;
@@ -72,7 +73,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     size, resolution, seed, waterLevel, forestDensity,
     rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes,
     dayNightSpeed, flashlightEnabled, flashlightIntensity,
-    season, landBias
+    season, landBias, rainEnabled
   } = config;
 
   // Day/Night State
@@ -94,6 +95,20 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   useLayoutEffect(() => {
     rollWeather();
   }, []);
+
+  useEffect(() => {
+    if (rainEnabled) {
+      const forcedType: WeatherType = season === 'winter' ? 'snow' : 'rain';
+      setWeather((prev) => ({
+        type: forcedType,
+        intensity: Math.max(prev.intensity, 0.6),
+        clouds: createClouds(adjustedCloudCount(14)),
+      }));
+      return;
+    }
+
+    rollWeather();
+  }, [rainEnabled, season]);
 
   const starsRef = useRef<THREE.Points>(null);
   useLayoutEffect(() => {
@@ -208,6 +223,8 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     }
   };
 
+  const adjustedCloudCount = (base: number) => Math.max(1, Math.round(base * CLOUD_MULTIPLIER));
+
   const createClouds = (count: number): CloudInstance[] =>
     Array.from({ length: count }, () => ({
       position: [
@@ -223,7 +240,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     const shouldPrecipitate = chance > 0.8;
     const type: WeatherType = shouldPrecipitate ? (season === 'winter' ? 'snow' : 'rain') : 'clear';
     const intensity = shouldPrecipitate ? 0.3 + Math.random() * 0.7 : 0;
-    const cloudCount = shouldPrecipitate ? 14 : 7;
+    const cloudCount = shouldPrecipitate ? adjustedCloudCount(14) : adjustedCloudCount(7);
     setWeather({ type, intensity, clouds: createClouds(cloudCount) });
   };
 
@@ -319,10 +336,14 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     setFogNear(10);
     setFogFar(size * fogDensityMultiplier);
 
-    // 2. Weather ticker
-    weatherTimer.current += delta;
-    if (weatherTimer.current > 18) {
-      rollWeather();
+    // 2. Weather ticker (only when lluvia automática está activa)
+    if (!rainEnabled) {
+      weatherTimer.current += delta;
+      if (weatherTimer.current > 18) {
+        rollWeather();
+        weatherTimer.current = 0;
+      }
+    } else {
       weatherTimer.current = 0;
     }
 
