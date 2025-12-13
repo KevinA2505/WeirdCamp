@@ -51,7 +51,7 @@ export const HumanAgent: React.FC<HumanAgentProps> = ({ agentId, runtimeRef, sho
     if (!agent || !groupRef.current) return;
 
     bobRef.current += delta * (agent.mode === 'running' ? 8 : 4);
-    const bobOffset = Math.sin(bobRef.current) * 0.08;
+    const bobOffset = Math.sin(bobRef.current) * 0.05;
 
     groupRef.current.position.set(agent.position.x, agent.position.y + bobOffset, agent.position.z);
     groupRef.current.rotation.y = agent.heading;
