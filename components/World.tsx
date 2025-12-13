@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
+import React, { useMemo, useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { WorldConfig, ObjectInstance } from '../types';
@@ -88,12 +88,23 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   const [weather, setWeather] = useState<WeatherState>({
     type: 'clear',
     intensity: 0,
-    clouds: [],
+    clouds: createClouds(8),
   });
-  const weatherTimer = useRef(0);
-  useLayoutEffect(() => {
-    rollWeather();
-  }, []);
+  const [cloudOpacity, setCloudOpacity] = useState(0.18);
+  const [cloudOpacityTarget, setCloudOpacityTarget] = useState(0.18);
+  useEffect(() => {
+    const targetType: WeatherType = config.rainEnabled ? (season === 'winter' ? 'snow' : 'rain') : 'clear';
+    const targetIntensity = config.rainEnabled ? config.rainIntensity : 0;
+    const targetCloudCount = config.rainEnabled ? 18 : 8;
+
+    setWeather((prev) => ({
+      type: targetType,
+      intensity: targetIntensity,
+      clouds: prev.clouds.length === targetCloudCount ? prev.clouds : createClouds(targetCloudCount),
+    }));
+
+    setCloudOpacityTarget(config.rainEnabled ? 0.45 : 0.18);
+  }, [config.rainEnabled, config.rainIntensity, season, size]);
 
   const starsRef = useRef<THREE.Points>(null);
   useLayoutEffect(() => {
@@ -208,8 +219,8 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     }
   };
 
-  const createClouds = (count: number): CloudInstance[] =>
-    Array.from({ length: count }, () => ({
+  function createClouds(count: number): CloudInstance[] {
+    return Array.from({ length: count }, () => ({
       position: [
         (Math.random() - 0.5) * size,
         size * 0.25 + Math.random() * 15,
@@ -217,15 +228,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       ],
       scale: 8 + Math.random() * 12,
     }));
-
-  const rollWeather = () => {
-    const chance = Math.random();
-    const shouldPrecipitate = chance > 0.8;
-    const type: WeatherType = shouldPrecipitate ? (season === 'winter' ? 'snow' : 'rain') : 'clear';
-    const intensity = shouldPrecipitate ? 0.3 + Math.random() * 0.7 : 0;
-    const cloudCount = shouldPrecipitate ? 14 : 7;
-    setWeather({ type, intensity, clouds: createClouds(cloudCount) });
-  };
+  }
 
   // Frame Loop for Cycle and Interactions
   useFrame((state, delta) => {
@@ -319,12 +322,8 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     setFogNear(10);
     setFogFar(size * fogDensityMultiplier);
 
-    // 2. Weather ticker
-    weatherTimer.current += delta;
-    if (weatherTimer.current > 18) {
-      rollWeather();
-      weatherTimer.current = 0;
-    }
+    // 2. Weather fades
+    setCloudOpacity((prev) => THREE.MathUtils.lerp(prev, cloudOpacityTarget, 0.02));
 
     // 3. Flashlight
     if (flashlightEnabled && lightRef.current && terrainRef.current) {
@@ -395,7 +394,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     );
   };
 
-  const CloudLayer: React.FC<{ clouds: CloudInstance[] }> = ({ clouds }) => (
+  const CloudLayer: React.FC<{ clouds: CloudInstance[]; opacity: number }> = ({ clouds, opacity }) => (
     <group>
       {clouds.map((cloud, index) => (
         <Billboard key={`cloud-${index}`} position={cloud.position} follow rotation={[0, 0, 0]}>
@@ -404,7 +403,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
             <meshStandardMaterial
               color="#e5e7eb"
               transparent
-              opacity={0.28}
+              opacity={opacity}
               depthWrite={false}
               emissiveIntensity={0}
             />
@@ -520,7 +519,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       />
 
       {/* Atmosphere */}
-      <CloudLayer clouds={weather.clouds} />
+      <CloudLayer clouds={weather.clouds} opacity={cloudOpacity} />
       {weather.type !== 'clear' && <Precipitation type={weather.type} intensity={weather.intensity} area={size} />}
 
 

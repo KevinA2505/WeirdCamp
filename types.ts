@@ -14,10 +14,12 @@ export interface WorldConfig {
   dayNightSpeed: number;
   flashlightEnabled: boolean;
   flashlightIntensity: number;
-  
+
   // New parameters
   season: Season;
   landBias: number; // -1.0 to 1.0 (Higher = more land)
+  rainEnabled: boolean;
+  rainIntensity: number; // 0 to 1
 }
 
 export interface TerrainData {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Lightbulb } from 'lucide-react';
+import { Box, CloudRain, Lightbulb } from 'lucide-react';
 import { WorldConfig } from '../types';
 
 interface ControlPanelProps {
@@ -106,6 +106,34 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu
               onChange={(e) => updateConfig('landBias', Number(e.target.value))}
               className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
             />
+          </div>
+
+          <div className="space-y-2 pt-2">
+            <button
+              onClick={() => updateConfig('rainEnabled', !config.rainEnabled)}
+              className={`w-full py-2.5 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all shadow ${
+                config.rainEnabled ? 'bg-blue-500 text-white hover:bg-blue-400' : 'bg-gray-700 text-white hover:bg-gray-600'
+              }`}
+            >
+              <CloudRain size={18} />
+              <span>{config.rainEnabled ? 'Detener lluvia' : 'Activar lluvia'}</span>
+            </button>
+
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-gray-400">
+                <label>Intensidad</label>
+                <span className="text-blue-300">{Math.round(config.rainIntensity * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={config.rainIntensity}
+                onChange={(e) => updateConfig('rainIntensity', Number(e.target.value))}
+                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+              />
+            </div>
           </div>
         </div>
       </div>
