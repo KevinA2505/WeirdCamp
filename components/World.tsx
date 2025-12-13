@@ -398,16 +398,21 @@ export const World: React.FC<WorldProps> = ({ config }) => {
 
     if (count === 0) return null;
 
+    const isSnow = type === 'snow';
+    const particleSize = isSnow ? 0.3675 : 0.35;
+    const particleOpacity = isSnow ? 0.6 : 0.85;
+    const particleColor = isSnow ? '#e2e8f0' : '#93c5fd';
+
     return (
       <points ref={precipitationRef} frustumCulled={false}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} />
         </bufferGeometry>
         <pointsMaterial
-          color={type === 'snow' ? '#e2e8f0' : '#60a5fa'}
-          size={type === 'snow' ? 0.3675 : 0.21}
+          color={particleColor}
+          size={particleSize}
           transparent
-          opacity={0.6}
+          opacity={particleOpacity}
           depthWrite={false}
           sizeAttenuation
         />
