@@ -167,7 +167,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       sway: number;
     }[];
 
-    const targetCount = Math.min(20, Math.max(10, Math.floor(10 + Math.random() * 11)));
+    const targetCount = Math.min(30, Math.max(10, Math.floor(10 + Math.random() * 11)));
     const chosen: typeof treeInstances = [];
 
     for (let i = 0; i < targetCount; i++) {
