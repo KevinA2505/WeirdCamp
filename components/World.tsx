@@ -62,7 +62,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     size, resolution, seed, waterLevel, forestDensity,
     rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes,
     dayNightSpeed, flashlightEnabled, flashlightIntensity,
-    season, landBias
+    season, landBias, fogDensity, horizonCount, horizonRadiusFactor, horizonOpacity
   } = config;
 
   // Day/Night State
@@ -279,9 +279,13 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     }
 
     // Update Fog Settings based on config
-    const fogDensityMultiplier = season === 'winter' ? 0.6 : (season === 'autumn' ? 0.8 : 1.0);
-    setFogNear(10);
-    setFogFar(size * fogDensityMultiplier);
+    const fogSeasonMultiplier = season === 'winter' ? 0.6 : (season === 'autumn' ? 0.8 : 1.0);
+    const fogStrength = THREE.MathUtils.clamp(fogDensity, 0.4, 1.5);
+    const nearDistance = Math.max(8, size * 0.08);
+    const farDistance = size * fogSeasonMultiplier * fogStrength;
+
+    setFogNear(nearDistance);
+    setFogFar(farDistance);
 
     // 2. Weather ticker
     weatherTimer.current += delta;
@@ -356,6 +360,47 @@ export const World: React.FC<WorldProps> = ({ config }) => {
           sizeAttenuation
         />
       </points>
+    );
+  };
+
+  const HorizonCloudCurtain: React.FC<{ count: number; radius: number; opacity: number }> = ({ count, radius, opacity }) => {
+    const billboards = useMemo(() => {
+      const clampedCount = Math.min(48, Math.max(24, Math.floor(count)));
+
+      return Array.from({ length: clampedCount }, (_, i) => {
+        const angle = (i / clampedCount) * Math.PI * 2;
+        const radiusJitter = radius * (0.94 + Math.random() * 0.12);
+        const height = 20 + Math.random() * 50;
+        const scale = 80 + Math.random() * 140;
+        const x = Math.cos(angle) * radiusJitter;
+        const z = Math.sin(angle) * radiusJitter;
+
+        return {
+          position: [x, height, z] as [number, number, number],
+          scale,
+        };
+      });
+    }, [count, radius]);
+
+    const visibleOpacity = THREE.MathUtils.clamp(opacity, 0.2, 1);
+
+    return (
+      <group>
+        {billboards.map((billboard, index) => (
+          <Billboard key={`horizon-cloud-${index}`} position={billboard.position} follow>
+            <mesh>
+              <planeGeometry args={[billboard.scale, billboard.scale * 0.6]} />
+              <meshStandardMaterial
+                color="#e5e7eb"
+                transparent
+                opacity={visibleOpacity}
+                depthWrite={false}
+                fog={false}
+              />
+            </mesh>
+          </Billboard>
+        ))}
+      </group>
     );
   };
 
@@ -470,6 +515,11 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       />
 
       {/* Atmosphere */}
+      <HorizonCloudCurtain
+        count={horizonCount}
+        radius={size * horizonRadiusFactor}
+        opacity={horizonOpacity}
+      />
       <CloudLayer clouds={weather.clouds} />
       {weather.type !== 'clear' && <Precipitation type={weather.type} intensity={weather.intensity} area={size} />}
 
