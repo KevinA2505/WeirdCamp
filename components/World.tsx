@@ -179,7 +179,16 @@ export const World: React.FC<WorldProps> = ({ config }) => {
           const c = (i + 1) * navResolution + j + 1;
           const d = (i + 1) * navResolution + j;
 
-          const quadMatches = [a, b, c, d].every((index) => navGrid[index].type === targetType);
+          const quadTypes = [a, b, c, d].map((index) => navGrid[index].type);
+          const allWater = quadTypes.every((type) => type === 'water');
+
+          // Keep water quads exclusive, but allow the land mesh to fill any
+          // remaining gaps so that the overlays always cover the full grid.
+          const quadMatches =
+            targetType === 'water'
+              ? allWater
+              : !allWater;
+
           if (!quadMatches) continue;
 
           indices.push(a, b, d);
