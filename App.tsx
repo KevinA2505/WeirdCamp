@@ -19,6 +19,8 @@ const App = () => {
     lakeThreshold: 0.12,
     showHitboxes: false,
     showNavMesh: false,
+    showLandNavMesh: true,
+    showWaterNavMesh: true,
     dayNightSpeed: 0.8,
     flashlightEnabled: false,
     flashlightIntensity: 1500,

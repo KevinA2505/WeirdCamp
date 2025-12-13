@@ -111,22 +111,47 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu
           <div className="space-y-2 pt-2">
             <button
               onClick={() => updateConfig('rainEnabled', !config.rainEnabled)}
-              className={`w-full py-2.5 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all shadow ${
-                config.rainEnabled ? 'bg-blue-500 text-white hover:bg-blue-400' : 'bg-gray-700 text-white hover:bg-gray-600'
-              }`}
+              className={`w-full py-2.5 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all shadow ${config.rainEnabled ? 'bg-blue-500 text-white hover:bg-blue-400' : 'bg-gray-700 text-white hover:bg-gray-600'}`}
             >
               <CloudRain size={18} />
               <span>{config.rainEnabled ? 'Detener lluvia' : 'Activar lluvia'}</span>
             </button>
 
             <button
-              onClick={() => updateConfig('showNavMesh', !config.showNavMesh)}
-              className={`w-full py-2.5 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all shadow ${
-                config.showNavMesh ? 'bg-red-600 text-white hover:bg-red-500' : 'bg-gray-700 text-white hover:bg-gray-600'
-              }`}
+              onClick={() => {
+                const nextState = !config.showNavMesh;
+                updateConfig('showNavMesh', nextState);
+                if (nextState) {
+                  updateConfig('showLandNavMesh', true);
+                  updateConfig('showWaterNavMesh', true);
+                }
+              }}
+              className={`w-full py-2.5 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all shadow ${config.showNavMesh ? 'bg-emerald-600 text-white hover:bg-emerald-500' : 'bg-gray-700 text-white hover:bg-gray-600'}`}
             >
-              <span>{config.showNavMesh ? 'Ocultar malla de navegación' : 'Mostrar malla de navegación'}</span>
+              <span>{config.showNavMesh ? 'Ocultar toda la malla' : 'Mostrar toda la malla del terreno'}</span>
             </button>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  if (!config.showNavMesh) updateConfig('showNavMesh', true);
+                  updateConfig('showLandNavMesh', !config.showLandNavMesh);
+                }}
+                className={`w-full py-2.5 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all shadow ${config.showLandNavMesh ? 'bg-red-600 text-white hover:bg-red-500' : 'bg-gray-700 text-white hover:bg-gray-600'}`}
+              >
+                <span>{config.showLandNavMesh ? 'Ocultar malla del terreno' : 'Mostrar malla del terreno'}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (!config.showNavMesh) updateConfig('showNavMesh', true);
+                  updateConfig('showWaterNavMesh', !config.showWaterNavMesh);
+                }}
+                className={`w-full py-2.5 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all shadow ${config.showWaterNavMesh ? 'bg-purple-600 text-white hover:bg-purple-500' : 'bg-gray-700 text-white hover:bg-gray-600'}`}
+              >
+                <span>{config.showWaterNavMesh ? 'Ocultar malla del agua' : 'Mostrar malla del agua'}</span>
+              </button>
+            </div>
 
             <div className="space-y-1">
               <div className="flex justify-between text-xs text-gray-400">

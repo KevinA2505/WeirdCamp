@@ -9,8 +9,6 @@ import { Billboard, Sky, Stars } from '@react-three/drei';
 type DayPhase = 'dawn' | 'noon' | 'dusk' | 'midnight';
 type WeatherType = 'clear' | 'rain' | 'snow';
 
-const WATER_LEVEL = 0;
-
 interface WeatherState {
   type: WeatherType;
   intensity: number;
@@ -69,7 +67,7 @@ const HitboxLayer: React.FC<{
 export const World: React.FC<WorldProps> = ({ config }) => {
   const {
     size, resolution, seed, waterLevel, forestDensity,
-    rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes, showNavMesh,
+    rockDensity, reliefScale, riverWidth, lakeThreshold, showHitboxes, showNavMesh, showLandNavMesh, showWaterNavMesh,
     dayNightSpeed, flashlightEnabled, flashlightIntensity,
     season, landBias
   } = config;
@@ -148,71 +146,63 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     );
   }, [size, resolution, seed, waterLevel, forestDensity, rockDensity, reliefScale, riverWidth, lakeThreshold, season, landBias]);
 
+  const seaLevel = waterLevel;
+
   const navigationGeometries = useMemo(() => {
-    if (!navGrid.length) return { base: null, walkability: null };
+    if (!navGrid.length) return { water: null, land: null };
 
     const vertexCount = navGrid.length;
     const positions = new Float32Array(vertexCount * 3);
     const overlayHeight = 0.12;
 
-    const baseWaterColor = new THREE.Color('#808080');
-    const baseLandColor = new THREE.Color('#ff0000');
-    const walkableColor = new THREE.Color('#22c55e');
-    const blockedColor = new THREE.Color('#ef4444');
-    const waterOverlayColor = new THREE.Color('#38bdf8');
-
-    const baseColors = new Float32Array(vertexCount * 3);
-    const walkabilityColors = new Float32Array(vertexCount * 3);
-
     navGrid.forEach((cell, i) => {
-      const baseY = cell.flags.isWater ? Math.max(cell.height, waterLevel) : cell.height;
+      const baseY = cell.type === 'water' ? Math.max(cell.height, seaLevel) : cell.height;
 
       positions[i * 3] = cell.x;
       positions[i * 3 + 1] = baseY + overlayHeight;
       positions[i * 3 + 2] = cell.z;
-
-      const cellBaseColor = cell.flags.isWater ? baseWaterColor : baseLandColor;
-      baseColors[i * 3] = cellBaseColor.r;
-      baseColors[i * 3 + 1] = cellBaseColor.g;
-      baseColors[i * 3 + 2] = cellBaseColor.b;
-
-      const walkableTarget = cell.flags.isWater
-        ? waterOverlayColor
-        : (cell.walkable ? walkableColor : blockedColor);
-      walkabilityColors[i * 3] = walkableTarget.r;
-      walkabilityColors[i * 3 + 1] = walkableTarget.g;
-      walkabilityColors[i * 3 + 2] = walkableTarget.b;
     });
 
-    const indices: number[] = [];
-    for (let i = 0; i < navResolution - 1; i++) {
-      for (let j = 0; j < navResolution - 1; j++) {
-        const a = i * navResolution + j;
-        const b = i * navResolution + j + 1;
-        const c = (i + 1) * navResolution + j + 1;
-        const d = (i + 1) * navResolution + j;
-        indices.push(a, b, d);
-        indices.push(b, c, d);
+    const buildGeometry = (targetType: NavigationCell['type'], color: THREE.Color) => {
+      const colors = new Float32Array(vertexCount * 3);
+      for (let i = 0; i < vertexCount; i++) {
+        colors[i * 3] = color.r;
+        colors[i * 3 + 1] = color.g;
+        colors[i * 3 + 2] = color.b;
       }
-    }
 
-    const IndexArray = navGrid.length > 65535 ? Uint32Array : Uint16Array;
-    const indexAttribute = new THREE.BufferAttribute(new IndexArray(indices), 1);
+      const indices: number[] = [];
+      for (let i = 0; i < navResolution - 1; i++) {
+        for (let j = 0; j < navResolution - 1; j++) {
+          const a = i * navResolution + j;
+          const b = i * navResolution + j + 1;
+          const c = (i + 1) * navResolution + j + 1;
+          const d = (i + 1) * navResolution + j;
 
-    const buildGeometry = (colors: Float32Array) => {
+          const quadMatches = [a, b, c, d].every((index) => navGrid[index].type === targetType);
+          if (!quadMatches) continue;
+
+          indices.push(a, b, d);
+          indices.push(b, c, d);
+        }
+      }
+
+      if (!indices.length) return null;
+
+      const IndexArray = navGrid.length > 65535 ? Uint32Array : Uint16Array;
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
       geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      geometry.setIndex(indexAttribute.clone());
+      geometry.setIndex(new THREE.BufferAttribute(new IndexArray(indices), 1));
       geometry.computeVertexNormals();
       return geometry;
     };
 
     return {
-      base: buildGeometry(baseColors),
-      walkability: buildGeometry(walkabilityColors),
+      water: buildGeometry('water', new THREE.Color('#a855f7')),
+      land: buildGeometry('land', new THREE.Color('#ef4444')),
     };
-  }, [navGrid, navResolution, waterLevel]);
+  }, [navGrid, navResolution, seaLevel]);
 
   // Geometry
   const geometry = useMemo(() => {
@@ -238,7 +228,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
       const by = positions[b + 1];
       const cy = positions[c + 1];
 
-      if (ay >= WATER_LEVEL && by >= WATER_LEVEL && cy >= WATER_LEVEL) {
+      if (ay >= seaLevel && by >= seaLevel && cy >= seaLevel) {
         landIndices.push(indices[i], indices[i + 1], indices[i + 2]);
       }
     }
@@ -590,23 +580,22 @@ export const World: React.FC<WorldProps> = ({ config }) => {
         />
       </mesh>
 
-      {showNavMesh && navigationGeometries.base && (
-        <mesh geometry={navigationGeometries.base} frustumCulled={false}>
+      {showNavMesh && config.showWaterNavMesh && navigationGeometries.water && (
+        <mesh geometry={navigationGeometries.water} frustumCulled={false}>
           <meshBasicMaterial
             vertexColors
             transparent
-            opacity={0.4}
+            opacity={0.45}
             depthWrite={false}
             side={THREE.DoubleSide}
           />
         </mesh>
       )}
 
-      {showNavMesh && navigationGeometries.walkability && (
-        <mesh geometry={navigationGeometries.walkability} frustumCulled={false}>
+      {showNavMesh && config.showLandNavMesh && navigationGeometries.land && (
+        <mesh geometry={navigationGeometries.land} frustumCulled={false}>
           <meshBasicMaterial
             vertexColors
-            wireframe
             transparent
             opacity={0.55}
             depthWrite={false}
