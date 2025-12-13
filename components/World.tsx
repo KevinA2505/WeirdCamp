@@ -286,7 +286,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       const startIndex = findNearestWalkable(agent.position, navContext);
       if (startIndex == null) return;
 
-      const desiredDistance = Math.max(size * 0.15, 20);
+      const desiredDistance = Math.max(size * 0.35, 20);
       let destination = findRandomWalkable(navContext, startIndex, desiredDistance);
       if (destination == null) destination = findRandomWalkable(navContext, startIndex, 0);
       if (destination == null) return;
