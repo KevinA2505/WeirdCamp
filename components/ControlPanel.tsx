@@ -42,6 +42,22 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onBackToMenu
             <Lightbulb size={18} />
             <span>{config.flashlightEnabled ? 'Apagar Linterna' : 'Encender Linterna'}</span>
           </button>
+
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-gray-400">
+              <label>Intensidad de Linterna</label>
+              <span className="text-yellow-200">{Math.round(config.flashlightIntensity)}</span>
+            </div>
+            <input
+              type="range"
+              min="200"
+              max="3000"
+              step="50"
+              value={config.flashlightIntensity}
+              onChange={(e) => updateConfig('flashlightIntensity', Number(e.target.value))}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-yellow-400"
+            />
+          </div>
         </div>
 
         <div className="space-y-4 pt-4 border-t border-gray-700">
