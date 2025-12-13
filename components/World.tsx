@@ -80,6 +80,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   const [skyRayleigh, setSkyRayleigh] = useState(0.5);
   const [time, setTime] = useState(0);
   const [starVisibility, setStarVisibility] = useState(1);
+  const fireflyVisibility = sunPosition.y < 0 ? starVisibility : 0;
 
   // Weather State
   const [weather, setWeather] = useState<WeatherState>({
@@ -94,6 +95,7 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   const [rainCloudOpacityTarget, setRainCloudOpacityTarget] = useState(0);
   const rainCloudTargetRef = useRef(0);
   const rainSpawnTimer = useRef(0);
+  const fireflyRef = useRef<THREE.Points>(null);
   useEffect(() => {
     const targetType: WeatherType = config.rainEnabled ? (season === 'winter' ? 'snow' : 'rain') : 'clear';
     const targetIntensity = config.rainEnabled ? config.rainIntensity : 0;
@@ -118,6 +120,14 @@ export const World: React.FC<WorldProps> = ({ config }) => {
     material.opacity = THREE.MathUtils.clamp(starVisibility, 0, 1);
     material.needsUpdate = true;
   }, [starVisibility]);
+
+  useLayoutEffect(() => {
+    if (!fireflyRef.current) return;
+    const material = fireflyRef.current.material as THREE.PointsMaterial;
+    material.transparent = true;
+    material.opacity = THREE.MathUtils.clamp(fireflyVisibility, 0, 1);
+    material.needsUpdate = true;
+  }, [fireflyVisibility]);
 
   // Fog State
   const [fogColor, setFogColor] = useState(new THREE.Color('#ffffff'));
@@ -147,6 +157,49 @@ export const World: React.FC<WorldProps> = ({ config }) => {
   }, [size, resolution, seed, waterLevel, forestDensity, rockDensity, reliefScale, riverWidth, lakeThreshold, season, landBias]);
 
   const seaLevel = waterLevel;
+
+  const fireflies = useMemo(() => {
+    const treeInstances = [...pines, ...broadleafs];
+    if (!treeInstances.length) return [] as {
+      position: THREE.Vector3;
+      phase: number;
+      floatHeight: number;
+      sway: number;
+    }[];
+
+    const targetCount = Math.min(20, Math.max(10, Math.floor(10 + Math.random() * 11)));
+    const chosen: typeof treeInstances = [];
+
+    for (let i = 0; i < targetCount; i++) {
+      chosen.push(treeInstances[Math.floor(Math.random() * treeInstances.length)]);
+    }
+
+    return chosen.map((tree) => {
+      const jitterRadius = 4;
+      const basePosition = new THREE.Vector3(
+        tree.x + (Math.random() - 0.5) * jitterRadius,
+        tree.y + 1 + Math.random() * 2,
+        tree.z + (Math.random() - 0.5) * jitterRadius,
+      );
+
+      return {
+        position: basePosition,
+        phase: Math.random() * Math.PI * 2,
+        floatHeight: 0.5 + Math.random() * 0.6,
+        sway: 0.3 + Math.random() * 0.25,
+      };
+    });
+  }, [pines, broadleafs]);
+
+  const fireflyPositions = useMemo(() => {
+    const positions = new Float32Array(fireflies.length * 3);
+    fireflies.forEach((firefly, index) => {
+      positions[index * 3] = firefly.position.x;
+      positions[index * 3 + 1] = firefly.position.y;
+      positions[index * 3 + 2] = firefly.position.z;
+    });
+    return positions;
+  }, [fireflies]);
 
   const navigationGeometries = useMemo(() => {
     if (!navGrid.length) return { water: null, land: null };
@@ -424,6 +477,25 @@ export const World: React.FC<WorldProps> = ({ config }) => {
         lightRef.current.intensity = 0;
       }
     }
+
+    // 4. Fireflies (only gently animate during night)
+    if (fireflyRef.current && fireflies.length) {
+      const positionsAttr = fireflyRef.current.geometry.getAttribute('position') as THREE.BufferAttribute;
+      const elapsed = state.clock.elapsedTime;
+
+      for (let i = 0; i < fireflies.length; i++) {
+        const base = fireflies[i];
+        const offsetY = Math.sin(elapsed * 0.6 + base.phase) * base.floatHeight;
+        const offsetX = Math.cos(elapsed * 0.4 + base.phase) * base.sway;
+        const offsetZ = Math.sin(elapsed * 0.5 + base.phase) * base.sway;
+
+        positionsAttr.array[i * 3] = base.position.x + offsetX;
+        positionsAttr.array[i * 3 + 1] = base.position.y + offsetY;
+        positionsAttr.array[i * 3 + 2] = base.position.z + offsetZ;
+      }
+
+      positionsAttr.needsUpdate = true;
+    }
   });
 
   const Precipitation: React.FC<{ type: WeatherType; intensity: number; area: number }> = ({ type, intensity, area }) => {
@@ -552,6 +624,23 @@ export const World: React.FC<WorldProps> = ({ config }) => {
         fade
         speed={0.5}
       />
+
+      {fireflies.length > 0 && (
+        <points ref={fireflyRef} frustumCulled={false} visible={fireflyVisibility > 0.05}>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[fireflyPositions, 3]} />
+          </bufferGeometry>
+          <pointsMaterial
+            color="#facc15"
+            size={1}
+            sizeAttenuation
+            transparent
+            opacity={fireflyVisibility}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </points>
+      )}
 
       {flashlightEnabled && (
         <pointLight
