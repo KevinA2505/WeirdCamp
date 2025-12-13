@@ -83,6 +83,28 @@ export const TerrainObjects: React.FC<InstancedProps> = ({ data, type, showHitbo
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
   }, [data, dummy, color, type]);
 
+  // Hitbox sizes tuned per object type so collisions feel closer to the
+  // rendered shapes (trees shouldn't block with a giant square, rocks stay snug).
+  const hitboxDimensions = useMemo(() => {
+    if (type === 'pine') {
+      return {
+        size: [1.6, 4.6, 1.6],
+        yOffset: 2.3,
+      } as const;
+    }
+    if (type === 'broadleaf') {
+      return {
+        size: [2.4, 3.6, 2.4],
+        yOffset: 1.8,
+      } as const;
+    }
+    // rocks
+    return {
+      size: [2.2, 2.2, 2.2],
+      yOffset: 1.1,
+    } as const;
+  }, [type]);
+
   return (
     <group>
       <instancedMesh
@@ -94,8 +116,14 @@ export const TerrainObjects: React.FC<InstancedProps> = ({ data, type, showHitbo
 
       {/* Hitbox Visualization (kept in scene for collisions even if hidden) */}
       {data.map((obj) => (
-         <mesh key={obj.id} position={[obj.x, obj.y + 2, obj.z]}>
-            <boxGeometry args={[3 * obj.scale, 5 * obj.scale, 3 * obj.scale]} />
+         <mesh key={obj.id} position={[obj.x, obj.y + hitboxDimensions.yOffset * obj.scale, obj.z]}>
+            <boxGeometry
+              args={[
+                hitboxDimensions.size[0] * obj.scale,
+                hitboxDimensions.size[1] * obj.scale,
+                hitboxDimensions.size[2] * obj.scale,
+              ]}
+            />
             <meshBasicMaterial
               color="#a855f7"
               wireframe
