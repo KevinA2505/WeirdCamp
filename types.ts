@@ -62,6 +62,15 @@ export interface BoatInstance {
   buoyancy: number;
 }
 
+export enum AgentState {
+  Walking = 'Walking',
+  SeekingBoat = 'SeekingBoat',
+  Mounting = 'Mounting',
+  Sailing = 'Sailing',
+  Dismounting = 'Dismounting',
+  Waiting = 'Waiting',
+}
+
 export enum BiomeType {
   WATER,
   SAND,

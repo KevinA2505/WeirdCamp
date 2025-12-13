@@ -1,16 +1,19 @@
 import React, { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
+import { AgentState } from '../types';
 
 export interface HumanRuntime {
   id: string;
   position: THREE.Vector3;
   heading: number;
-  mode: 'walking' | 'running';
+  mode: 'walking' | 'running' | 'rowing' | 'motor';
   color: string;
   height: number;
   radius: number;
   pauseTimer?: number;
+  state?: AgentState;
+  mountProgress?: number;
 }
 
 interface HumanAgentProps {
@@ -65,29 +68,41 @@ export const HumanAgent: React.FC<HumanAgentProps> = ({ agentId, runtimeRef, sho
     const agent = runtimeRef.current.get(agentId);
     if (!agent || !groupRef.current) return;
 
-    const stepRate = agent.mode === 'running' ? 10 : 6;
+    const state = agent.state ?? AgentState.Walking;
+    const mountProgress = THREE.MathUtils.clamp(agent.mountProgress ?? 0, 0, 1);
+    const inBoat =
+      state === AgentState.Mounting || state === AgentState.Sailing || state === AgentState.Dismounting;
+
+    const seatedFactor = state === AgentState.Dismounting ? 1 - mountProgress : mountProgress;
+    const baseStepRate = agent.mode === 'running' ? 10 : agent.mode === 'motor' ? 4 : 6;
+    const stepRate = inBoat ? 2.5 : baseStepRate;
     bobRef.current += delta * stepRate;
-    const bobOffset = Math.sin(bobRef.current) * 0.05;
+    const bobStrength = inBoat ? 0.25 : 1;
+    const bobOffset = Math.sin(bobRef.current) * 0.05 * bobStrength * (1 - seatedFactor * 0.75);
 
     groupRef.current.position.set(agent.position.x, agent.position.y + bobOffset, agent.position.z);
     groupRef.current.rotation.y = agent.heading;
 
-    const swingAmplitude = agent.mode === 'running' ? 0.9 : 0.55;
+    const swingAmplitude = inBoat ? 0.18 : agent.mode === 'running' ? 0.9 : 0.55;
     const leftSwing = Math.sin(bobRef.current) * swingAmplitude;
     const rightSwing = -Math.sin(bobRef.current) * swingAmplitude;
 
     if (leftArmGroup.current) {
-      leftArmGroup.current.rotation.x = THREE.MathUtils.lerp(
-        leftArmGroup.current.rotation.x,
-        leftSwing,
+      const targetX = inBoat ? -Math.PI * 0.12 * (1 + seatedFactor) : leftSwing;
+      leftArmGroup.current.rotation.x = THREE.MathUtils.lerp(leftArmGroup.current.rotation.x, targetX, 0.18);
+      leftArmGroup.current.rotation.z = THREE.MathUtils.lerp(
+        leftArmGroup.current.rotation.z,
+        inBoat ? Math.PI * 0.1 * seatedFactor : Math.PI * 0.01,
         0.18
       );
     }
 
     if (rightArmGroup.current) {
-      rightArmGroup.current.rotation.x = THREE.MathUtils.lerp(
-        rightArmGroup.current.rotation.x,
-        rightSwing,
+      const targetX = inBoat ? -Math.PI * 0.12 * (1 + seatedFactor) : rightSwing;
+      rightArmGroup.current.rotation.x = THREE.MathUtils.lerp(rightArmGroup.current.rotation.x, targetX, 0.18);
+      rightArmGroup.current.rotation.z = THREE.MathUtils.lerp(
+        rightArmGroup.current.rotation.z,
+        inBoat ? -Math.PI * 0.1 * seatedFactor : -Math.PI * 0.01,
         0.18
       );
     }
