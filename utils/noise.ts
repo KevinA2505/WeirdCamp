@@ -1,5 +1,5 @@
 import { createNoise2D } from 'simplex-noise';
-import { TerrainData, ObjectInstance, Season, NavigationCell, BoatInstance } from '../types';
+import { TerrainData, ObjectInstance, Season, NavigationCell } from '../types';
 import * as THREE from 'three';
 
 // Define Palettes for each season
@@ -134,7 +134,6 @@ export const generateTerrain = (
   const rocks: ObjectInstance[] = [];
   const waterInstances: ObjectInstance[] = [];
   const peakInstances: ObjectInstance[] = [];
-  const boats: BoatInstance[] = [];
 
   const segmentSize = size / effectiveResolution;
   const halfSize = size / 2;
@@ -338,75 +337,6 @@ export const generateTerrain = (
     }
   }
 
-  // --- Shoreline Detection for Boats ---
-  const candidateBoats: BoatInstance[] = [];
-  const neighborOffsets = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-  ];
-
-  for (let i = 0; i < navResolution; i++) {
-    for (let j = 0; j < navResolution; j++) {
-      const cell = navGrid[i * navResolution + j];
-      if (!cell || cell.type !== 'water') continue;
-
-      let normal = new THREE.Vector2(0, 0);
-      let hasLandNeighbor = false;
-
-      neighborOffsets.forEach(([dx, dz]) => {
-        const neighbor = navGrid[(i + dx) * navResolution + (j + dz)];
-        if (neighbor && neighbor.type === 'land') {
-          hasLandNeighbor = true;
-          normal.x += cell.x - neighbor.x;
-          normal.y += cell.z - neighbor.z;
-        }
-      });
-
-      if (!hasLandNeighbor) continue;
-
-      const length = normal.length();
-      if (length === 0) continue;
-
-      normal = normal.normalize();
-      const offset = new THREE.Vector3(normal.x, 0, normal.y).multiplyScalar(segmentSize * 0.6);
-
-      const boatPosition = new THREE.Vector3(cell.x, SEA_LEVEL + 0.3, cell.z).add(offset);
-      const rotation = Math.atan2(normal.x, normal.y);
-
-      candidateBoats.push({
-        id: `boat-${i}-${j}`,
-        x: boatPosition.x,
-        y: boatPosition.y,
-        z: boatPosition.z,
-        rotation,
-        scale: 1.2,
-        mass: 120,
-        friction: 0.35,
-        buoyancy: 0.85,
-      });
-    }
-  }
-
-  // Select a handful of well-spaced boats
-  const targetBoatCount = 5 + Math.floor(Math.random() * 3); // 5–7 boats
-  const minBoatSpacing = segmentSize * 15;
-  const shuffledCandidates = candidateBoats.sort(() => Math.random() - 0.5);
-
-  shuffledCandidates.forEach((candidate) => {
-    if (boats.length >= targetBoatCount) return;
-    const tooClose = boats.some((boat) => {
-      const dx = boat.x - candidate.x;
-      const dz = boat.z - candidate.z;
-      return Math.sqrt(dx * dx + dz * dz) < minBoatSpacing;
-    });
-
-    if (!tooClose) {
-      boats.push(candidate);
-    }
-  });
-
   for (let i = 0; i < effectiveResolution; i++) {
     for (let j = 0; j < effectiveResolution; j++) {
       const a = i * resolutionPlusOne + j;
@@ -433,7 +363,6 @@ export const generateTerrain = (
     rocks,
     waterInstances,
     peakInstances,
-    boats,
     segmentSize,
     navGrid,
     navResolution
