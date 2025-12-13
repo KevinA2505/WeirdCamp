@@ -10,6 +10,7 @@ export interface HumanRuntime {
   color: string;
   height: number;
   radius: number;
+  pauseTimer?: number;
 }
 
 interface HumanAgentProps {
@@ -20,7 +21,11 @@ interface HumanAgentProps {
 
 export const HumanAgent: React.FC<HumanAgentProps> = ({ agentId, runtimeRef, showHitboxes }) => {
   const groupRef = useRef<THREE.Group>(null);
+  const leftArmGroup = useRef<THREE.Group>(null);
+  const rightArmGroup = useRef<THREE.Group>(null);
+  const headGroup = useRef<THREE.Group>(null);
   const bobRef = useRef(0);
+  const headMotionRef = useRef(0);
 
   const runtimeAgent = runtimeRef.current.get(agentId);
   const agentHeight = runtimeAgent?.height ?? 2.2;
@@ -60,11 +65,44 @@ export const HumanAgent: React.FC<HumanAgentProps> = ({ agentId, runtimeRef, sho
     const agent = runtimeRef.current.get(agentId);
     if (!agent || !groupRef.current) return;
 
-    bobRef.current += delta * (agent.mode === 'running' ? 8 : 4);
+    const stepRate = agent.mode === 'running' ? 10 : 6;
+    bobRef.current += delta * stepRate;
     const bobOffset = Math.sin(bobRef.current) * 0.05;
 
     groupRef.current.position.set(agent.position.x, agent.position.y + bobOffset, agent.position.z);
     groupRef.current.rotation.y = agent.heading;
+
+    const swingAmplitude = agent.mode === 'running' ? 0.9 : 0.55;
+    const leftSwing = Math.sin(bobRef.current) * swingAmplitude;
+    const rightSwing = -Math.sin(bobRef.current) * swingAmplitude;
+
+    if (leftArmGroup.current) {
+      leftArmGroup.current.rotation.x = THREE.MathUtils.lerp(
+        leftArmGroup.current.rotation.x,
+        leftSwing,
+        0.18
+      );
+    }
+
+    if (rightArmGroup.current) {
+      rightArmGroup.current.rotation.x = THREE.MathUtils.lerp(
+        rightArmGroup.current.rotation.x,
+        rightSwing,
+        0.18
+      );
+    }
+
+    const pauseTimer = (agent as HumanRuntime & { pauseTimer?: number }).pauseTimer ?? 0;
+    const isPaused = pauseTimer > 0;
+
+    const targetHeadYaw = isPaused ? Math.sin(headMotionRef.current * 0.6) * 0.45 : 0;
+    const targetHeadPitch = isPaused ? Math.sin(headMotionRef.current * 0.4) * 0.15 : 0;
+    headMotionRef.current = isPaused ? headMotionRef.current + delta : 0;
+
+    if (headGroup.current) {
+      headGroup.current.rotation.y = THREE.MathUtils.lerp(headGroup.current.rotation.y, targetHeadYaw, 0.1);
+      headGroup.current.rotation.x = THREE.MathUtils.lerp(headGroup.current.rotation.x, targetHeadPitch, 0.1);
+    }
   });
 
   const halfHeight = agentHeight / 2;
@@ -89,33 +127,37 @@ export const HumanAgent: React.FC<HumanAgentProps> = ({ agentId, runtimeRef, sho
         <capsuleGeometry args={[torsoRadius, torsoLength, 6, 12]} />
       </mesh>
 
-      <mesh castShadow receiveShadow material={skinMaterial} position={[0, headCenterY, 0]}>
-        <sphereGeometry args={[headRadius, 16, 16]} />
-      </mesh>
+      <group ref={headGroup} position={[0, headCenterY, 0]}>
+        <mesh castShadow receiveShadow material={skinMaterial}>
+          <sphereGeometry args={[headRadius, 16, 16]} />
+        </mesh>
 
-      <mesh castShadow receiveShadow material={accentMaterial} position={[0, hatCenterY, 0]}>
-        <cylinderGeometry args={[agentRadius * 1.05, agentRadius * 1.15, agentHeight * 0.15, 12]} />
-      </mesh>
+        <mesh castShadow receiveShadow material={accentMaterial} position={[0, hatCenterY - headCenterY, 0]}>
+          <cylinderGeometry args={[agentRadius * 1.05, agentRadius * 1.15, agentHeight * 0.15, 12]} />
+        </mesh>
+      </group>
 
-      <mesh
-        castShadow
-        receiveShadow
-        material={skinMaterial}
-        position={[armOffsetX, armCenterY, 0]}
-        rotation={[0, 0, Math.PI * 0.01]}
-      >
-        <capsuleGeometry args={[armRadius, Math.max(armLength - armRadius * 2, armRadius * 0.8), 6, 10]} />
-      </mesh>
+      <group ref={leftArmGroup} position={[armOffsetX, shoulderHeight, 0]} rotation={[0, 0, Math.PI * 0.01]}>
+        <mesh
+          castShadow
+          receiveShadow
+          material={skinMaterial}
+          position={[0, armCenterY - shoulderHeight, 0]}
+        >
+          <capsuleGeometry args={[armRadius, Math.max(armLength - armRadius * 2, armRadius * 0.8), 6, 10]} />
+        </mesh>
+      </group>
 
-      <mesh
-        castShadow
-        receiveShadow
-        material={skinMaterial}
-        position={[-armOffsetX, armCenterY, 0]}
-        rotation={[0, 0, -Math.PI * 0.01]}
-      >
-        <capsuleGeometry args={[armRadius, Math.max(armLength - armRadius * 2, armRadius * 0.8), 6, 10]} />
-      </mesh>
+      <group ref={rightArmGroup} position={[-armOffsetX, shoulderHeight, 0]} rotation={[0, 0, -Math.PI * 0.01]}>
+        <mesh
+          castShadow
+          receiveShadow
+          material={skinMaterial}
+          position={[0, armCenterY - shoulderHeight, 0]}
+        >
+          <capsuleGeometry args={[armRadius, Math.max(armLength - armRadius * 2, armRadius * 0.8), 6, 10]} />
+        </mesh>
+      </group>
 
       {showHitboxes && (
         <mesh position={[0, halfHeight, 0]}>
