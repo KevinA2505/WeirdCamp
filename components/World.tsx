@@ -210,7 +210,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
       agent.path = path;
       agent.waypoint = 1;
       agent.targetIndex = destination;
-      agent.mode = path.length > navResolution / 2 ? 'running' : 'walking';
+      agent.mode = path.length > navResolution ? 'running' : 'walking';
       agent.lastRepath = performance.now();
       agent.lastProgressCheck = performance.now();
       agent.distanceSinceProgress = 0;
@@ -642,7 +642,7 @@ export const World = forwardRef<WorldHandle, WorldProps>(({ config }, ref) => {
 
         direction.normalize();
         const slopeFactor = THREE.MathUtils.clamp(1 - targetCell.slope * 0.22, 0.4, 1);
-        const speed = (agent.mode === 'running' ? 10 : 5.2) * slopeFactor;
+        const speed = (agent.mode === 'running' ? 7 : 3.6) * slopeFactor;
         const step = Math.min(distance, speed * delta);
         agent.position.addScaledVector(direction, step);
         agent.heading = Math.atan2(direction.x, direction.z);
