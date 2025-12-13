@@ -34,6 +34,8 @@ export interface TerrainData {
   waterInstances: ObjectInstance[];
   peakInstances: ObjectInstance[];
   segmentSize: number; // Export segment size for hitbox scaling
+  navGrid: NavigationCell[];
+  navResolution: number;
 }
 
 export interface ObjectInstance {
@@ -50,4 +52,19 @@ export enum BiomeType {
   GRASS,
   ROCK,
   SNOW
+}
+
+export type NavCellType = 'land' | 'water';
+
+export interface NavigationCell {
+  x: number;
+  z: number;
+  height: number;
+  slope: number;
+  type: NavCellType;
+  walkable: boolean;
+  flags: {
+    isWater: boolean;
+    isPeak: boolean;
+  };
 }
